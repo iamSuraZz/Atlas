@@ -1,0 +1,29 @@
+# ── PERSONAL DATA — never committed. This repo is intended to be publishable.
+private/
+*.local.md
+
+# ── secrets
+.env
+.env*.local
+.env.production
+
+# deps / build
+/node_modules
+/.next/
+/out/
+/build
+*.tsbuildinfo
+next-env.d.ts
+
+# test + tooling output
+/coverage
+/playwright-report
+/test-results
+/.vercel
+/drizzle/meta/_journal.json.bak
+
+# os / editor
+.DS_Store
+*.pem
+npm-debug.log*
+.idea/

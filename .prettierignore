@@ -1,0 +1,5 @@
+private/
+.next/
+node_modules/
+drizzle/
+*.md
