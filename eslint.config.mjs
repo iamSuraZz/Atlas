@@ -135,6 +135,15 @@ export default defineConfig([
     rules: { 'no-console': 'off' },
   },
 
+  // The migration runner is a CLI entrypoint: its output is the operator's only
+  // record of what was applied. Scoped to the single file, not the directory —
+  // repositories and the client have no business printing.
+  {
+    name: 'atlas/db-migrate-cli',
+    files: ['src/infra/db/migrate.ts'],
+    rules: { 'no-console': 'off' },
+  },
+
   globalIgnores([
     '.next/**',
     'out/**',

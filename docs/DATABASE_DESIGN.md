@@ -24,6 +24,25 @@ Your brief listed ~40 entities. Several were the same thing under different name
 
 ## 2. Core schema (DDL sketch)
 
+> **AMENDED 2026-09-19 — M0 task 3, migration `drizzle/0000_warm_lyja.sql`.** The
+> `app_user` table as shipped differs from the sketch below in three ways. The sketch
+> is left intact as the record of what was originally decided (working rule 8:
+> nothing silently removed).
+>
+> 1. **`email` is `text NOT NULL UNIQUE` with `CHECK (email = lower(email))`, not
+>    `citext`.** Citext needs a Postgres extension plus a Drizzle custom type to
+>    express a rule the application can guarantee by normalising at its own boundary.
+>    The CHECK keeps the guarantee in the database rather than in call-site
+>    discipline — without it `UNIQUE` is case-sensitive and `a@b.com` and `A@B.com`
+>    would both be storable.
+> 2. **`display_name` is replaced by Better Auth's field set** — `name`,
+>    `email_verified`, `image` — and `updated_at` is added. M0 task 4 then maps auth
+>    onto this table instead of introducing a second user concept that every query
+>    would have to join across. These four columns are unused until then.
+> 3. **`weekly_hours` defaults to `11.0`, not `12.0`**, matching the 11 h/week
+>    planning assumption in `DECISIONS.md` §2.1, and gains
+>    `CHECK (weekly_hours > 0 AND weekly_hours <= 60)`.
+
 ```sql
 -- ─── enums ────────────────────────────────────────────────────────────
 CREATE TYPE mastery_state AS ENUM (
@@ -387,6 +406,49 @@ CREATE TABLE judge_calibration (      -- your golden set: correctness + AI curri
   measured_at   timestamptz NOT NULL DEFAULT now()
 );
 ```
+
+---
+
+### 2.1 Known gaps and conventions (recorded M0 task 3)
+
+**`updated_at` is application-maintained. Raw SQL bypasses it. Deferred to M1.**
+
+The Drizzle schema sets `updated_at` via `$onUpdate`, which runs in the application
+layer. Any `UPDATE` issued outside Drizzle — psql, a migration, a Neon console
+query — leaves `updated_at` stale, and nothing reports it. The fix is a trigger,
+deliberately not applied in M0 because nothing writes to `app_user` yet:
+
+```sql
+CREATE OR REPLACE FUNCTION set_updated_at() RETURNS trigger AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER app_user_set_updated_at
+  BEFORE UPDATE ON app_user
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+```
+
+`BEFORE UPDATE` rather than `AFTER`, because the trigger must modify the row on its
+way into storage. `FOR EACH ROW` because a statement-level trigger has no `NEW`.
+The function is written once and reused by every table that gains an `updated_at`,
+which is why it is not named after `app_user`.
+
+**Every `numeric` column is converted to `number` at the repository boundary.**
+
+The driver returns `numeric` as a string, because Postgres numerics can hold values
+no JavaScript number can represent. Converting in `src/infra/db/mappers.ts` — not
+with a global type parser, and never with `.$type<number>()` — keeps the conversion
+visible at the one place a row crosses into the domain. `.$type<number>()` in
+particular would assert a type the driver does not actually produce, so the mismatch
+would surface only at runtime.
+
+This applies to **every** numeric column added from here on, not just
+`app_user.weekly_hours`. One caveat travels with the rule: `Number` is exact only to
+about 15 significant digits. A column wider than that must stay a string or move to
+bigint, and the mapper must not pretend otherwise.
 
 ---
 
