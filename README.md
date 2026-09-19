@@ -127,6 +127,85 @@ Requires Node >= 22.
 
 ---
 
+## Deployment
+
+Vercel + Neon. Three environment variables, set in the Vercel dashboard under
+**Production** scope. Placeholders only below — real values never enter this
+repository.
+
+```bash
+DATABASE_URL="postgresql://USER:PASSWORD@HOST-pooler.REGION.aws.neon.tech/DB?sslmode=require"
+BETTER_AUTH_SECRET=""          # generate a NEW one: openssl rand -base64 32
+BETTER_AUTH_URL="https://YOUR-PRODUCTION-HOST"   # no trailing slash
+```
+
+**`DATABASE_URL_UNPOOLED` is deliberately not set in production.** Only
+`src/infra/db/migrate.ts` reads it, and nothing imports that module — migrations
+are an explicit local command, never something a deployment runs. Adding it to
+Vercel would grant a second credential direct, non-pooled DDL access for no
+benefit.
+
+### `BETTER_AUTH_SECRET` fails open, not closed
+
+If the variable is unset, Better Auth does not error. It falls back to a
+hard-coded string that ships inside the npm package:
+
+```js
+secret = legacySecret || "better-auth-secret-12345678901234567890"
+```
+
+The app starts, sign-in works, and every session token is forgeable by anyone who
+has read the library. You get a log warning and nothing else. Set this before you
+trust a single session, and use a value distinct from your local one so a leaked
+development secret cannot sign production cookies.
+
+### `BETTER_AUTH_URL` decides more than the URL
+
+It is the source for the WebAuthn **rpID** (hostname) and **origin** (full
+origin), for the magic-link addresses written to the logs, and for the session
+cookie's name and flags — an `https://` value switches the cookie to the
+`__Secure-` prefix with the `Secure` attribute. A cookie issued locally therefore
+cannot work against production, which is correct and occasionally confusing.
+
+Two consequences worth knowing before the first deploy:
+
+- **Passkeys bind to the hostname.** A credential registered against
+  `*.vercel.app` will not work on a custom domain added later. Choose the final
+  hostname before registering credentials you intend to keep.
+- **Preview deployments cannot authenticate.** Each preview gets a unique
+  hostname, `BETTER_AUTH_URL` is a single value, and the origin check fails.
+  Health endpoints and `/sign-in` still render, so previews remain useful for
+  verifying a build.
+
+### Before the first request
+
+Migrations are forward-only and never run on boot. Apply them from your own
+machine, against whichever Neon branch production uses, before that branch serves
+traffic:
+
+```bash
+npm run db:migrate
+```
+
+### Verifying a deployment
+
+```bash
+curl https://YOUR-PRODUCTION-HOST/api/health        # 200 — liveness, no database
+curl https://YOUR-PRODUCTION-HOST/api/health/deep   # 200 + latencyMs — Neon reachable
+```
+
+`/api/health/deep` returns **503** with a specific reason when the database is
+unreachable, rather than 200 with a warning in the body. That is the endpoint to
+read first when something is wrong.
+
+Then open `/sign-in`: the registration sentence is read from the database at
+request time, so seeing it at all proves server-side reads work.
+
+Keep the deployment region near the Neon region — the database is reached over a
+pooled connection on every request, and a distant region pays for it each time.
+
+---
+
 ## Notes
 
 **Fonts are a system stack, not `next/font/google`.** Google Fonts is fetched at

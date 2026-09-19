@@ -1,0 +1,61 @@
+/*
+ * The only file in this repository allowed to contain a colour literal.
+ * Everything else references these variables — see docs/M0_SPEC.md §5 and
+ * docs/UX_PLAN.md §4, both of which carry a dated amendment for the two
+ * contrast corrections below.
+ *
+ * Dark only. Light theme is a deferred v2 cut, so there is deliberately no
+ * prefers-color-scheme block and no [data-theme] switch: scaffolding for a
+ * feature that was cut is just a thing to maintain.
+ */
+:root {
+  /* ─── surfaces ─────────────────────────────────────────────────────── */
+  --bg: #0a0a0b;
+  --surface: #111113;
+  --raised: #1c1c1f;
+
+  /*
+   * Two border tokens, and they must not be merged back into one.
+   *
+   * WCAG 2.2 SC 1.4.11 (Non-text Contrast) requires 3:1 for "visual
+   * information required to identify user interface components". It does not
+   * apply to purely decorative separators. --border is 1.25:1 against
+   * --surface, which is fine for a divider and illegal for the edge of an
+   * input, so the two cases get two tokens.
+   *
+   * --border-control is the minimum that clears 3:1 against both --surface
+   * (3.35) and --raised (3.02). --raised is the binding constraint, being the
+   * lightest surface; --bg is the easiest and does not affect the value.
+   */
+  --border: #26262b; /* dividers, rules, decorative edges */
+  --border-control: #67676c; /* input/control boundaries — never below 3:1 */
+
+  /* ─── text ─────────────────────────────────────────────────────────── */
+  --text: #f5f5f7; /* 17.32:1 on --surface */
+  --text-2: #a1a1a8; /* 7.35:1 */
+  --text-3: #83838b; /* 5.02:1 — raised from #6E6E76, which was 3.73 and failed AA */
+
+  /* ─── accent: exactly one, for the primary action and mastery transitions.
+   * Scarcity is the point. The moment a second thing is amber it stops
+   * meaning anything. Also the focus ring on every control (UX_PLAN §6:
+   * visible focus rings, never removed). 9.18:1 on --bg.
+   * ──────────────────────────────────────────────────────────────────── */
+  --accent: #e8a33d;
+  --accent-fg: #0a0a0b;
+
+  /* ─── semantic: objective outcomes only, never decoration ──────────── */
+  --ok: #3fb950;
+  --fail: #f85149;
+  --info: #58a6ff;
+
+  /* ─── radius ───────────────────────────────────────────────────────── */
+  --r-card: 8px;
+  --r-ctl: 6px;
+
+  /* ─── type scale (UX_PLAN §4: 13/15/18/24/32) ──────────────────────── */
+  --step-0: 0.8125rem; /* 13px — metadata, captions */
+  --step-1: 0.9375rem; /* 15px — body */
+  --step-2: 1.125rem; /* 18px — section headings */
+  --step-3: 1.5rem; /* 24px — screen titles */
+  --step-4: 2rem; /* 32px — the one number a screen is about */
+}

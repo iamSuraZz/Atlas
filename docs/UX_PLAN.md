@@ -26,6 +26,17 @@ No nested navigation. No settings in the sidebar (⌘K or avatar menu). Command 
 
 Rejected: a dashboard that aggregates all six. Aggregation dashboards optimise for *feeling informed*, which is the opposite of acting. TODAY is the dashboard.
 
+> **Note, 2026-09-19 — M0 task 6. Build status, not a change of decision.** The
+> six-item nav above stands; four of the six are unbuilt, which is not the same as
+> superseded, so nothing here is amended.
+>
+> - **M0 ships four items** — TODAY, SKILLS, PROJECTS, CAREER — and all four render
+>   placeholders naming the milestone that fills them.
+> - **JOURNAL returns in M3** with the decision journal.
+> - **INTERVIEW is open.** `DECISIONS.md` §4 cut the interview simulator but kept the
+>   project deep-dive, which still needs somewhere to live. To be resolved at M3, not
+>   now.
+
 ## 3. Screens
 
 ### 3.1 TODAY — the whole product in one screen
@@ -151,6 +162,21 @@ Premium tool, not LMS. Reference points: Linear, Vercel dashboard, Things. Anti-
 Mastery states use a consistent visual language everywhere — a 6-segment bar with the earned segments filled, so the state reads at a glance without a legend.
 
 **Light theme** ships from day one, properly. Not an afterthought.
+
+> **AMENDED 2026-09-19 — M0 task 5. The table and the line above are unedited;
+> the following supersedes them.**
+>
+> - **Light theme is cut from M0.** `M0_SPEC.md` §5 defers it as a v2 cut and the
+>   implementation is dark-only: no `prefers-color-scheme` block, no `[data-theme]`
+>   switch. Scaffolding for a deferred feature is only a thing to maintain. The
+>   "AA contrast in both themes" item in §6 therefore applies to one theme today.
+> - **Text tertiary is `#83838B`, not `#6E6E76`** — the original failed AA body text
+>   at 3.73:1 on `#111113`.
+> - **A second border token exists**, `--border-control: #67676C`, for interactive
+>   control boundaries where WCAG SC 1.4.11 requires 3:1. The `#26262B` in the table
+>   remains correct for decorative dividers.
+>
+> Full ratios and derivation: `M0_SPEC.md` §5 amendment and `src/styles/tokens.css`.
 
 ## 5. Responsive
 

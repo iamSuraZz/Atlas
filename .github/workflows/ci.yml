@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+# Cancel superseded runs on the same ref — a queue of stale runs teaches nothing.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: typecheck · lint · boundaries · format · build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      # Run every gate even when an earlier one fails: one push should report
+      # all of its problems, not the first one alphabetically.
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Lint
+        if: '!cancelled()'
+        run: npm run lint
+      - name: Architecture boundaries
+        if: '!cancelled()'
+        run: npm run verify:boundaries
+      - name: Format
+        if: '!cancelled()'
+        run: npm run format:check
+
+      # No DATABASE_URL, and deliberately no dummy one. The app resolves its
+      # database lazily (src/infra/db/client.ts), so a build that needs a
+      # connection string is a bug in the code, not a gap in CI.
+      - name: Build
+        if: '!cancelled()'
+        run: npm run build
+
+  secrets:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history: this repository is public and git history cannot be
+          # un-committed, so the whole log is scanned, not just the new commits.
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  e2e:
+    name: Playwright E2E
+    # PRs only, per M0_SPEC §3 task 8.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

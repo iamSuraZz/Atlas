@@ -73,6 +73,29 @@ It is a learning argument. Prisma's abstraction is *good*, which is exactly the 
 
 *Alternative:* MUI (you know it — learning nothing, and heavier than needed here).
 
+> **AMENDED 2026-09-19 — M0 task 5/6. shadcn is out; unstyled Radix is in. The text
+> above is unedited.**
+>
+> `shadcn@4.21.0 init` was run and reverted after three minutes. It:
+>
+> - added `import { Geist } from "next/font/google"` to `app/layout.tsx`, reintroducing
+>   the build-time third-party fetch this project deliberately avoids;
+> - wrote `src/lib/utils.ts` as `export { cn } from "cn"` — an unvetted npm package,
+>   in a repository intended to go public;
+> - injected 62 colour literals into `globals.css`, against the M0 task 5 requirement
+>   that no hex exist outside `tokens.css`;
+> - installed `@base-ui/react` rather than Radix, which this ADR names.
+>
+> Each is individually fixable; the problem is that every future `shadcn add` would
+> reimpose them. **The premise of this ADR survives** — copy-in source over Radix
+> primitives, own the code, no library lock-in — but shadcn 4.x is no longer the
+> route to it. `Button`, `Card`, `Input` are hand-written against `tokens.css`;
+> `Dialog` wraps `@radix-ui/react-dialog` for focus trapping, focus restoration,
+> Escape and `aria-modal`, which are the parts worth not writing twice.
+>
+> *Cost:* new primitives are written by hand instead of copied in.
+> *Reverse if:* a future shadcn release stops rewriting project files during `add`.
+
 ---
 
 ### ADR-008 · Vitest + Testing Library + Playwright
