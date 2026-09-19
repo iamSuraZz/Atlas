@@ -26,6 +26,16 @@ function relyingParty(baseUrl: string): { rpID: string; origin: string } {
   return { rpID: url.hostname, origin: url.origin }
 }
 
+/*
+ * Better Auth's magic-link signup carries no display name, and app_user.name is
+ * NOT NULL with a CHECK that rejects ''. The email local part is the only real
+ * name available at signup; no fallback string is invented, so a pathological
+ * address fails loudly on the constraint rather than landing as a placeholder.
+ */
+function nameFromEmail(email: string): string {
+  return email.split('@')[0] ?? ''
+}
+
 function buildAuth() {
   const baseURL = process.env.BETTER_AUTH_URL
 
@@ -65,7 +75,7 @@ function buildAuth() {
            * impossible. This exists so the attempt fails as a sentence rather
            * than as a raw constraint violation.
            */
-          before: async () => {
+          before: async (user: { email: string; name?: string | undefined }) => {
             if ((await countUsers()) > 0) {
               // APIError, not Error: a bare throw leaves the endpoint returning 500
               // with an empty body, which tells the person nothing.
@@ -75,7 +85,10 @@ function buildAuth() {
               })
             }
 
-            return undefined
+            // Keep a real name if a future provider supplies one.
+            const name = user.name?.trim() ? user.name : nameFromEmail(user.email)
+
+            return { data: { ...user, name } }
           },
         },
       },

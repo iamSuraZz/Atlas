@@ -15,6 +15,13 @@
       "when": 1789764732333,
       "tag": "0001_talented_the_leader",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789836177737,
+      "tag": "0002_curly_dorian_gray",
+      "breakpoints": true
     }
   ]
 }

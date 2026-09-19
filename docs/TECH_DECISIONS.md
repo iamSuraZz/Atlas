@@ -27,6 +27,14 @@ ADR format. Each records the alternatives and what would make us reverse. Writin
 *Alternatives:* MongoDB (you already know it; learning nothing), Postgres + separate vector DB (more infra, no benefit at your data volume), SQLite (insufficient for the concepts you need — no real isolation-level work).
 *Reverse if:* never, within this horizon.
 
+> **Note, 2026-09-19 — version only; the decision stands.** The Neon branch runs
+> **PostgreSQL 18.6**, not 17. One behavioural change matters downstream: PG18 added
+> virtual generated columns and made VIRTUAL the default, so `GENERATED ALWAYS AS
+> (expr)` without `STORED` is accepted and yields a column that is unmaterialised and
+> cannot be indexed — the identical statement is an error on 17. Verified against the
+> live branch. The resulting schema convention is recorded in `DATABASE_DESIGN.md` §2.
+> `pgvector` 0.8.6 is available on the branch. The decision text above is unedited.
+
 ---
 
 ### ADR-004 · Drizzle ORM, with hand-written SQL for anything analytical

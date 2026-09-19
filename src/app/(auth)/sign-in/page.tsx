@@ -1,97 +1,26 @@
-'use client'
+import { countUsers } from '@/infra/db/users'
+import { SignInForm } from './sign-in-form'
 
-import { useState } from 'react'
-import { authClient } from '@/infra/auth/client'
+/*
+ * Reads the database, so it must not be prerendered: `next build` would evaluate
+ * it without DATABASE_URL and fail. Marking it dynamic keeps the build
+ * environment-free, which is what lets CI build without a database.
+ */
+export const dynamic = 'force-dynamic'
 
-type Status =
-  | { kind: 'idle' }
-  | { kind: 'working' }
-  | { kind: 'sent' }
-  | { kind: 'error'; message: string }
+export default async function SignInPage() {
+  /*
+   * Whether registration is open is a fact about the database, not a sentence
+   * someone remembered to update. null means the question could not be answered
+   * — the page says so rather than guessing.
+   */
+  let registrationOpen: boolean | null
 
-export default function SignInPage() {
-  const [email, setEmail] = useState('')
-  const [status, setStatus] = useState<Status>({ kind: 'idle' })
-
-  async function signInWithPasskey() {
-    setStatus({ kind: 'working' })
-    const result = await authClient.signIn.passkey()
-
-    if (result?.error) {
-      setStatus({
-        kind: 'error',
-        message: result.error.message ?? 'Passkey sign-in failed.',
-      })
-      return
-    }
-
-    window.location.href = '/'
+  try {
+    registrationOpen = (await countUsers()) === 0
+  } catch {
+    registrationOpen = null
   }
 
-  async function sendMagicLink(event: React.FormEvent) {
-    event.preventDefault()
-    setStatus({ kind: 'working' })
-    const { error } = await authClient.signIn.magicLink({ email, callbackURL: '/' })
-
-    setStatus(
-      error
-        ? { kind: 'error', message: error.message ?? 'Could not send link.' }
-        : { kind: 'sent' },
-    )
-  }
-
-  const busy = status.kind === 'working'
-
-  return (
-    <main className="mx-auto flex min-h-dvh max-w-sm flex-col justify-center gap-6 px-6">
-      <div className="flex flex-col gap-2">
-        <h1 className="text-2xl font-medium">Atlas</h1>
-        <p className="text-sm text-[var(--text-3)]">
-          Single user. Registration is closed.
-        </p>
-      </div>
-
-      <button
-        type="button"
-        onClick={signInWithPasskey}
-        disabled={busy}
-        className="rounded-[var(--r-ctl)] bg-[var(--accent)] px-4 py-2 text-sm font-medium text-[var(--accent-fg)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] disabled:opacity-60"
-      >
-        {busy ? 'Working…' : 'Sign in with a passkey'}
-      </button>
-
-      <form onSubmit={sendMagicLink} className="flex flex-col gap-2">
-        <label htmlFor="email" className="text-xs text-[var(--text-3)]">
-          Or send a sign-in link
-        </label>
-        <input
-          id="email"
-          type="email"
-          required
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="rounded-[var(--r-ctl)] border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
-        />
-        <button
-          type="submit"
-          disabled={busy}
-          className="rounded-[var(--r-ctl)] border border-[var(--border)] px-4 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] disabled:opacity-60"
-        >
-          Send link
-        </button>
-      </form>
-
-      {/* Email delivery is not built. The link is written to the server log. */}
-      {status.kind === 'sent' && (
-        <p className="text-sm text-[var(--ok,#3FB950)]">
-          Link sent. Email delivery is not built yet — the link is in the server log.
-        </p>
-      )}
-      {status.kind === 'error' && (
-        <p role="alert" className="text-sm text-[var(--fail,#F85149)]">
-          {status.message}
-        </p>
-      )}
-    </main>
-  )
+  return <SignInForm registrationOpen={registrationOpen} />
 }

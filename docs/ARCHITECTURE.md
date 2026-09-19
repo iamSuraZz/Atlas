@@ -45,7 +45,7 @@ A modular monolith. Single-user, single deployment, clean internal boundaries. M
 └───────┬──────────┘  └────────┬───────┘  └──────────────────┘
         │                      │
 ┌───────▼──────────┐  ┌────────▼────────────────────────────┐
-│ PostgreSQL 17    │  │ Providers: Anthropic · OpenAI · local│
+│ PostgreSQL 18    │  │ Providers: Anthropic · OpenAI · local│
 │ + pgvector       │  └─────────────────────────────────────┘
 └──────────────────┘
 ┌──────────────────┐  ┌─────────────────────────────────────┐

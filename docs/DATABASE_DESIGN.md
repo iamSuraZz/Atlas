@@ -1,7 +1,22 @@
 # DATABASE DESIGN
 **Part H**
 
-PostgreSQL 17 + pgvector. This schema is deliberately a teaching artifact as well as a working one — it exercises composite indexes, partial indexes, check constraints, enums, JSONB, generated columns, window functions and migrations, all of which are on your priority list.
+PostgreSQL 18 + pgvector. This schema is deliberately a teaching artifact as well as a working one — it exercises composite indexes, partial indexes, check constraints, enums, JSONB, generated columns, window functions and migrations, all of which are on your priority list.
+
+**Version note (2026-09-19).** The Neon branch runs **PostgreSQL 18.6**. One
+behavioural difference from 17 matters for the "generated columns" claim above:
+PG18 added *virtual* generated columns and made VIRTUAL the default, so
+`GENERATED ALWAYS AS (expr)` without `STORED` is accepted and produces a column
+that is computed on read, never materialised and **not indexable**. On 17 the same
+statement is an error. Verified against the live branch, not inferred from release
+notes.
+>
+> **Convention, adopted now while there is nothing to retrofit: every generated
+> column in this schema writes `STORED` explicitly.** The spec currently declares
+> zero generated columns and the database contains zero, so this is a rule for
+> whoever adds the first one, not a change to existing DDL. Omitting `STORED` is
+> only acceptable where a virtual column is specifically wanted, and that must be
+> stated in a comment on the column.
 
 ---
 

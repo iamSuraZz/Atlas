@@ -52,6 +52,8 @@ export const appUser = pgTable(
     // The database refuses mixed-case email rather than trusting every future
     // call site to have normalised first. UNIQUE is only meaningful given this.
     check('app_user_email_lowercase', sql`${t.email} = lower(${t.email})`),
+    // '' satisfies NOT NULL, so NOT NULL alone permits a nameless account.
+    check('app_user_name_not_empty', sql`${t.name} <> ''`),
     check(
       'app_user_weekly_hours_range',
       sql`${t.weeklyHours} > 0 AND ${t.weeklyHours} <= 60`,
