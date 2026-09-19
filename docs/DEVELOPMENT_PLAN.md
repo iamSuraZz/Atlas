@@ -112,6 +112,26 @@ Cap: **3.5 build hours per week**, carved from the dominant theme. The build is 
 
 **Total post-MVP: ~122h across five months ≈ 6h/month.** That fits the 25% cap with room. If it does not fit, features get cut, not weeks added.
 
+### 3.1 Deferred engineering tasks
+
+Added after the v2 revision, so **not** superseded by `DECISIONS.md` — unlike §2–3 above.
+
+| Task | Trigger | Est. |
+|---|---|---|
+| Switch the migration runner from `drizzle-orm/neon-http` to `drizzle-orm/neon-serverless` (WebSocket) + `ws`, so a migration runs inside a transaction | **M1, before any migration that alters a populated table** | 1h |
+
+The HTTP transport Neon exposes cannot open a transaction. Migration `0000` was a
+single `CREATE TABLE`, which Postgres wraps implicitly, and `0001` only creates new
+tables — a partial failure there is recoverable by dropping them, and the recovery
+command is a comment at the top of the file. Neither property survives contact with
+a migration that rewrites existing rows: a failure halfway leaves the table in a
+state no rollback undoes.
+
+There is roughly 1.5h of uncommitted budget (`DECISIONS.md` §2.1 against §10), so
+this hour comes out of M1's 8h rather than from anywhere new.
+
+---
+
 ## 4. Working rules
 
 1. **Runnable at every commit.** `main` always works.

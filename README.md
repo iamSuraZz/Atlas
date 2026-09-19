@@ -10,11 +10,12 @@ Single user. Not a product.
 
 ## Status
 
-**M0 · tasks 1–2 of 8 complete.** Foundation only — the app renders a placeholder page.
+**M0 · tasks 1–3 of 8 complete; task 4 built but not fully verified.** Passkey sign-in
+has not been exercised on a real authenticator — see `private/build-log.md`.
 
 | Milestone | Scope | State |
 |---|---|---|
-| M0 Foundation | Next 16, strict TS, Neon, auth, shell, CI | 🟡 2/8 tasks |
+| M0 Foundation | Next 16, strict TS, Neon, auth, shell, CI | 🟡 3.5/8 tasks |
 | M1 Skill graph + evidence | Graph, mastery gates, evidence ledger | ⬜ |
 | M2 Today engine | Scheduler, explainable "why", mission runner | ⬜ |
 | M3 Project deep-dive | Fact model, AI gateway, interrogation | ⬜ |
@@ -131,6 +132,14 @@ Requires Node >= 22.
 **Fonts are a system stack, not `next/font/google`.** Google Fonts is fetched at
 build time, making the build depend on a third party and fail offline. M0 task 5
 self-hosts Inter and JetBrains Mono via `next/font/local`.
+
+**Sign-in links are written to the server log, not emailed.** There is no email
+provider in M0 and inventing one would be a lie, so the magic-link transport logs
+the link at `warn` level with a `[magic-link transport]` prefix. In development that
+is your terminal; in production it is the Vercel function logs for
+`/api/auth/[...all]`. Atlas has exactly one user, so the only person who can read
+those logs is the only person entitled to the link. Passkeys are the primary
+credential; this path exists so that losing the device is not the end of the account.
 
 **Migrations are forward-only and never run on boot.** `drizzle-kit` generates, the
 SQL gets read and committed, then applied as an explicit step.
