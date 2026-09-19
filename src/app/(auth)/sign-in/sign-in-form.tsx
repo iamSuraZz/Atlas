@@ -1,6 +1,8 @@
 'use client'
 
 import { useState } from 'react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { authClient } from '@/infra/auth/client'
 
 type Status =
@@ -49,44 +51,34 @@ export function SignInForm({ registrationOpen }: { registrationOpen: boolean | n
         <RegistrationNotice registrationOpen={registrationOpen} />
       </div>
 
-      <button
-        type="button"
-        onClick={signInWithPasskey}
-        disabled={busy}
-        className="rounded-[var(--r-ctl)] bg-[var(--accent)] px-4 py-2 text-sm font-medium text-[var(--accent-fg)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] disabled:opacity-60"
-      >
+      <Button variant="primary" onClick={signInWithPasskey} disabled={busy}>
         {busy ? 'Working…' : 'Sign in with a passkey'}
-      </button>
+      </Button>
 
       <form onSubmit={sendMagicLink} className="flex flex-col gap-2">
-        <label htmlFor="email" className="text-xs text-[var(--text-3)]">
+        <label htmlFor="email" className="text-text-3 text-xs">
           Or send a sign-in link
         </label>
-        <input
+        <Input
           id="email"
           type="email"
           required
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="rounded-[var(--r-ctl)] border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
         />
-        <button
-          type="submit"
-          disabled={busy}
-          className="rounded-[var(--r-ctl)] border border-[var(--border)] px-4 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] disabled:opacity-60"
-        >
+        <Button type="submit" disabled={busy}>
           Send link
-        </button>
+        </Button>
       </form>
 
       {/* Email delivery is not built. The link is written to the server log. */}
       {status.kind === 'sent' && (
-        <p className="text-sm text-[var(--ok,#3FB950)]">
+        <p className="text-ok text-sm">
           Link sent. Email delivery is not built yet — the link is in the server log.
         </p>
       )}
       {status.kind === 'error' && (
-        <p role="alert" className="text-sm text-[var(--fail,#F85149)]">
+        <p role="alert" className="text-fail text-sm">
           {status.message}
         </p>
       )}
@@ -98,14 +90,14 @@ function RegistrationNotice({ registrationOpen }: { registrationOpen: boolean | 
   // null means the count could not be read. Claiming either state would be a guess.
   if (registrationOpen === null) {
     return (
-      <p role="alert" className="text-sm text-[var(--fail,#F85149)]">
+      <p role="alert" className="text-fail text-sm">
         Could not reach the database to check whether registration is open.
       </p>
     )
   }
 
   return (
-    <p className="text-sm text-[var(--text-3)]">
+    <p className="text-text-3 text-sm">
       {registrationOpen
         ? 'No account exists yet. The first sign-in creates it.'
         : 'Single user. Registration is closed.'}

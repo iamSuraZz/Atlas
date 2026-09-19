@@ -40,7 +40,8 @@ atlas/
 │   │   ├── db/{client,schema,migrate}.ts
 │   │   ├── auth/server.ts
 │   │   └── vercel/                ← the only Vercel-aware code
-│   ├── components/ui/             ← shadcn, copied in
+│   ├── components/ui/             ← Button, Card, Dialog, Input
+│   ├── lib/utils.ts               ← cn() and other cross-cutting helpers
 │   └── styles/tokens.css
 ├── tests/{unit,integration,e2e}/
 ├── .env.example
@@ -110,6 +111,29 @@ Dark only in M0. Light theme deferred (a v2 cut).
 ```
 
 One accent, used only for the primary action and mastery transitions. Scarcity is what makes it read as important; the moment a second thing is amber it stops meaning anything.
+
+> **AMENDED 2026-09-19 — M0 task 5. Two contrast corrections. The block above is
+> unedited; these values supersede it.**
+>
+> Ratios were computed for every foreground/background pair before the tokens were
+> used. Two failed.
+>
+> 1. **`--text-3` is `#83838B`, not `#6E6E76`.** The original scored 3.92 / 3.73 /
+>    3.36 against `--bg` / `--surface` / `--raised` — AA-large only, below the 4.5:1
+>    WCAG 2.2 SC 1.4.3 requires for body text. `#83838B` is the minimum that clears
+>    4.5:1 on all three, at 5.26 / 5.02 / 4.52.
+> 2. **`--border-control: #67676C` is added** alongside `--border`, which keeps its
+>    original `#26262B`. SC 1.4.11 requires 3:1 for the visual information that
+>    identifies a UI component; `--border` scores 1.31 / 1.25 / 1.13, and the surface
+>    fills cannot carry it instead (`--surface` on `--bg` is 1.05). Since 1.4.11 does
+>    not govern decorative separators, the two cases take two tokens rather than one
+>    compromise. `#67676C` is the minimum clearing 3:1 on `--surface` (3.35) and
+>    `--raised` (3.02); `--raised`, as the lightest surface, is the binding constraint.
+>
+> Also added: `--step-0..4` (13/15/18/24/32 per UX_PLAN §4). No motion token — one
+> duration used twice is abstraction ahead of need; the literal 150ms stays inline
+> until a third caller appears. The reasoning for the two border tokens is repeated
+> in `src/styles/tokens.css` so it survives a later reading of the code alone.
 
 ---
 

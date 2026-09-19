@@ -14,11 +14,13 @@
     "check": "npm run typecheck && npm run lint && npm run verify:boundaries && npm run format:check",
     "verify:boundaries": "node scripts/verify-boundaries.mjs",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "node --env-file=.env.local src/infra/db/migrate.ts"
+    "db:migrate": "node --env-file=.env.local src/infra/db/migrate.ts",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@better-auth/passkey": "^1.7.5",
     "@neondatabase/serverless": "^1.1.0",
+    "@radix-ui/react-dialog": "^1.1.23",
     "better-auth": "^1.7.5",
     "drizzle-orm": "^0.45.2",
     "next": "16.3.5",
@@ -26,6 +28,7 @@
     "react-dom": "19.2.8"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^22.20.3",
     "@types/react": "^19",
