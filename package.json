@@ -15,7 +15,10 @@
     "verify:boundaries": "node scripts/verify-boundaries.mjs",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node --env-file=.env.local src/infra/db/migrate.ts",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:seed": "node --env-file=.env.local scripts/seed-skills.mjs"
   },
   "dependencies": {
     "@better-auth/passkey": "^1.7.5",
@@ -39,7 +42,8 @@
     "prettier": "^3.9.8",
     "prettier-plugin-tailwindcss": "^0.8.1",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^5.0.1"
   },
   "description": "Personal engineering operating system",
   "engines": {

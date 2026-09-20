@@ -32,6 +32,38 @@ Two properties matter. Evidence flows back into skill state — the graph is der
 
 A DAG. ~90 nodes at seed across 7 categories.
 
+> **AMENDED 2026-09-20 — M1 task a. The count above was an estimate and it was
+> wrong. The tree below enumerates 190 nodes: 29 topics and 161 leaves.**
+>
+> | Category | Total | Topics |
+> |---|---|---|
+> | ENGINEERING_CORE | 27 | 4 |
+> | BACKEND | 26 | 5 |
+> | DATA | 24 | 3 |
+> | SYSTEMS | 36 | 5 |
+> | QUALITY | 22 | 3 |
+> | AI_ENGINEERING | 30 | 5 |
+> | PROFESSIONAL | 25 | 4 |
+> | **Total** | **190** | **29** |
+>
+> All 190 are seeded. `scripts/seed-skills.mjs` parses this tree rather than
+> copying it, and refuses to run if the count changes — so the seed cannot drift
+> from the curriculum without someone noticing.
+>
+> Four fields this section specifies are **not** populated, because no source
+> produces them and inventing ~1,500 values would breach rule 4:
+>
+> - `market_weight` — "from JD analysis"; the JD analyser is M6 and has never
+>   run. Every node sits at the column default `0.50`.
+> - `hours_to_practical` — made nullable in migration 0005. `NULL` means *not
+>   estimated*, which is true; a uniform placeholder would not be.
+> - `role_profile_target` — per-skill targets across three profiles is 561 rows
+>   of invented state and weight. `skill_state.target_state` already defaults
+>   to `PRACTICAL`.
+> - `prerequisites[]` — declared here but never listed. 62 edges are seeded,
+>   only those defensible on their face. The set grows as the curriculum is
+>   used, and `tests/unit/skill-graph.test.ts` asserts it stays acyclic.
+
 ```
 ENGINEERING_CORE
 ├── typescript { generics, conditional-types, mapped-types, narrowing, utility-types, module-architecture }
@@ -114,6 +146,25 @@ Your §45 model, with explicit, testable promotion requirements.
 
 Where no objective artifact is possible, the skill cannot exceed `PRACTICAL` from in-app activity alone. Only a **real interview outcome** unlocks `INTERVIEW_READY` for those. This deliberately prevents the simulator from certifying you.
 
+> **AMENDED 2026-09-20 — M1 task b. Two gates above were ambiguous; these are
+> the readings `src/domain/skills/mastery.ts` implements.**
+>
+> 1. **"≥1 correct at basic difficulty"** is read as *at least one successful
+>    attempt at basic difficulty or harder*. A correct answer at ADVANCED
+>    necessarily clears BASIC, and the literal reading would block someone who
+>    only ever succeeded at hard questions.
+> 2. **"successful recall after ≥30 days"** is read as *a success at least 30
+>    days after an earlier success on the same node*. The original does not say
+>    what the 30 days are measured from.
+>
+> Both are exercised by tests. Changing either is a one-line change with a test
+> that fails first.
+>
+> Which skills have no objective artifact is now data, not inference: migration
+> 0005 adds `skill.artifact_policy`, and the communication, leadership and
+> product topics are seeded `NO_OBJECTIVE_ARTIFACT` — 18 of the 25 PROFESSIONAL
+> nodes.
+
 ### 3.2 Decay
 
 Each node has a decay class and half-life:
@@ -141,6 +192,33 @@ on failure: s ← s × 0.5,  d ← min(10, d + 1)
 
 next_review = now + s × ln(1 / target_retention)      target_retention = 0.90
 ```
+
+> **AMENDED 2026-09-20 — M1 task c. `target_retention = 0.60`, and the prose
+> above is wrong where it disagrees with the formula.**
+>
+> This section said two incompatible things. The prose called `s` "days until
+> ~90% recall probability"; the formula `r(t) = exp(-t/s)` puts one stability
+> period at `1/e` ≈ 0.37. **The formula is correct: `s` is the 1/e point, not
+> the 90% point.**
+>
+> Keeping `target_retention = 0.90` made the interval `0.105 × s`, so reviewing
+> on time left `(1 - r)` at 0.10 and stability grew **6% per review** — a first
+> interval of two and a half hours that took dozens of reviews to reach a day.
+> At 0.60 the interval is `0.51 × s`, reviews land near the 1/e point, and
+> stability compounds at 38% per on-time review.
+>
+> Starting from `s = 1` day at difficulty 5, reviewing exactly when due:
+>
+> ```
+> 0.90:  2.5h -> 2.7h -> 2.8h -> 3.0h -> 3.2h -> 3.4h   (unusable)
+> 0.60:  0.5d -> 0.7d -> 1.0d -> 1.3d -> 1.8d -> 2.5d
+> ```
+>
+> Two constants the document never specifies are exported from
+> `src/domain/review/scheduling.ts`: `INITIAL_STABILITY_DAYS = 1` (because
+> `s × k` cannot lift zero) and `MIN_STABILITY_DAYS = 0.1` (because repeated
+> halving approaches zero, and a persisted zero makes retrievability undefined
+> for that node forever). `f(d)` is `(11 - d) / 10`.
 
 Nothing exotic. The value is in applying it to *concepts with varied formats* rather than to flashcards — you review "PostgreSQL indexing" by debugging a slow query, not by flipping a card. Same schedule, different activity, which is also the anti-boredom mechanism (§5).
 

@@ -1,0 +1,12 @@
+# Normalise line endings in the repository and in every working tree.
+#
+# Without this, a Windows checkout produces CRLF files while the committed
+# blobs stay LF, so `npm run format:check` fails locally and passes in CI.
+# That asymmetry is worse than either outcome on its own.
+* text=auto eol=lf
+
+# Binary: never touched.
+*.woff2 binary
+*.png binary
+*.jpg binary
+*.ico binary
