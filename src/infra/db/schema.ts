@@ -1,15 +1,21 @@
 import { sql } from 'drizzle-orm'
 import {
   boolean,
+  bigserial,
   check,
+  date,
   index,
   uniqueIndex,
   integer,
   numeric,
+  pgEnum,
   pgTable,
+  primaryKey,
+  smallint,
   text,
   timestamp,
   uuid,
+  type AnyPgColumn,
 } from 'drizzle-orm/pg-core'
 
 /*
@@ -151,5 +157,342 @@ export const passkey = pgTable(
   (t) => [
     index('passkey_user_id_idx').on(t.userId),
     index('passkey_credential_id_idx').on(t.credentialID),
+  ],
+)
+
+/*
+ * ─── Skill graph (M1 task a) ─────────────────────────────────────────────
+ *
+ * Shape from docs/DATABASE_DESIGN.md §2; role profiles from DECISIONS.md §5.
+ *
+ * Skill ids are human-readable paths — 'postgres/indexing' — rather than
+ * surrogate keys. The graph is seeded, read constantly and written rarely, and
+ * a readable id makes a migration, a log line and a seed diff all legible
+ * without a join.
+ */
+
+export const masteryState = pgEnum('mastery_state', [
+  'UNASSESSED',
+  'INTRODUCED',
+  'DEVELOPING',
+  'PRACTICAL',
+  'INTERVIEW_READY',
+  'MASTERED',
+])
+
+export const skillCategory = pgEnum('skill_category', [
+  'ENGINEERING_CORE',
+  'BACKEND',
+  'DATA',
+  'SYSTEMS',
+  'QUALITY',
+  'AI_ENGINEERING',
+  'PROFESSIONAL',
+])
+
+export const decayClass = pgEnum('decay_class', [
+  'PROCEDURAL_DAILY',
+  'CONCEPTUAL',
+  'RECALL_HEAVY',
+  'NARRATIVE',
+])
+
+/*
+ * Whether a skill admits an objective artifact at all. LEARNING_ENGINE.md §3.1:
+ * communication has none, so it caps at PRACTICAL unless a real interview
+ * outcome unlocks it. The mastery gate takes this as an input; before this
+ * column existed the screen had to assume every skill had artifacts available.
+ */
+export const artifactPolicy = pgEnum('artifact_policy', [
+  'OBJECTIVE_ARTIFACT_AVAILABLE',
+  'NO_OBJECTIVE_ARTIFACT',
+])
+
+export const skill = pgTable(
+  'skill',
+  {
+    id: text('id').primaryKey(),
+    // Self-referencing: the category tree lives in the table, not in code.
+    parentId: text('parent_id').references((): AnyPgColumn => skill.id),
+    category: skillCategory('category').notNull(),
+    name: text('name').notNull(),
+    description: text('description').notNull(),
+    decay: decayClass('decay').notNull(),
+    /*
+     * Nullable: NULL means 'not estimated'. LEARNING_ENGINE.md §2 expects a
+     * figure per node but no source produces one, and a uniform placeholder is
+     * a fabricated number wearing a uniform.
+     */
+    hoursToPractical: numeric('hours_to_practical', { precision: 4, scale: 1 }),
+    artifactPolicy: artifactPolicy('artifact_policy')
+      .notNull()
+      .default('OBJECTIVE_ARTIFACT_AVAILABLE'),
+    marketWeight: numeric('market_weight', { precision: 3, scale: 2 })
+      .notNull()
+      .default('0.50'),
+  },
+  (t) => [
+    check('skill_no_self_parent', sql`${t.id} <> ${t.parentId}`),
+    check('skill_market_weight_range', sql`${t.marketWeight} BETWEEN 0 AND 1`),
+  ],
+)
+
+export const skillPrerequisite = pgTable(
+  'skill_prerequisite',
+  {
+    skillId: text('skill_id')
+      .notNull()
+      .references(() => skill.id, { onDelete: 'cascade' }),
+    requiresId: text('requires_id')
+      .notNull()
+      .references(() => skill.id, { onDelete: 'cascade' }),
+    // A soft prerequisite orders the curriculum; a hard one gates it.
+    hard: boolean('hard').notNull().default(true),
+  },
+  (t) => [
+    primaryKey({ columns: [t.skillId, t.requiresId] }),
+    /*
+     * Blocks the one-step cycle only. Longer cycles are unreachable in SQL
+     * without a recursive trigger, so the acyclicity invariant is asserted by
+     * a unit test over the seed instead — see tests/unit/skill-graph.test.ts.
+     */
+    check('skill_prerequisite_no_self', sql`${t.skillId} <> ${t.requiresId}`),
+  ],
+)
+
+export const skillState = pgTable(
+  'skill_state',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => appUser.id, { onDelete: 'cascade' }),
+    skillId: text('skill_id')
+      .notNull()
+      .references(() => skill.id),
+    state: masteryState('state').notNull().default('UNASSESSED'),
+    stabilityDays: numeric('stability_days', { precision: 6, scale: 2 })
+      .notNull()
+      .default('0'),
+    difficulty: numeric('difficulty', { precision: 3, scale: 1 })
+      .notNull()
+      .default('5.0'),
+    lastPractised: timestamp('last_practised', { withTimezone: true }),
+    nextReview: timestamp('next_review', { withTimezone: true }),
+    // A prior, never a score. Self-rating informs selection; it never sets state.
+    selfRating: smallint('self_rating'),
+    targetState: masteryState('target_state').notNull().default('PRACTICAL'),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.skillId] }),
+    check('skill_state_difficulty_range', sql`${t.difficulty} BETWEEN 1 AND 10`),
+    check('skill_state_self_rating_range', sql`${t.selfRating} BETWEEN 1 AND 5`),
+  ],
+)
+
+/*
+ * Append-only. A state in skill_state is a claim; this is the reason it was
+ * made. Nothing here is ever updated or deleted — the audit trail is the point,
+ * and a rewritten history cannot tell you your judgement was wrong.
+ */
+export const masteryTransition = pgTable('mastery_transition', {
+  id: bigserial('id', { mode: 'number' }).primaryKey(),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => appUser.id, { onDelete: 'cascade' }),
+  skillId: text('skill_id')
+    .notNull()
+    .references(() => skill.id),
+  fromState: masteryState('from_state').notNull(),
+  toState: masteryState('to_state').notNull(),
+  reason: text('reason').notNull(),
+  evidenceIds: uuid('evidence_ids').array().notNull().default([]),
+  automatic: boolean('automatic').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+/*
+ * ─── Role profiles (DECISIONS.md §5) ─────────────────────────────────────
+ *
+ * A+B is a blend, not a choice. The scheduler reads effective target and weight
+ * as the share-weighted merge across active profiles, so changing track later is
+ * a row update rather than a rewrite. D_HIGH_DSA ships seeded but at share 0, so
+ * the option is real rather than theoretical.
+ */
+export const roleProfile = pgTable('role_profile', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  description: text('description').notNull(),
+})
+
+export const roleProfileTarget = pgTable(
+  'role_profile_target',
+  {
+    profileId: text('profile_id')
+      .notNull()
+      .references(() => roleProfile.id, { onDelete: 'cascade' }),
+    skillId: text('skill_id')
+      .notNull()
+      .references(() => skill.id),
+    targetState: masteryState('target_state').notNull(),
+    weight: numeric('weight', { precision: 3, scale: 2 }).notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.profileId, t.skillId] }),
+    check('role_profile_target_weight_range', sql`${t.weight} BETWEEN 0 AND 1`),
+  ],
+)
+
+export const userRoleBlend = pgTable(
+  'user_role_blend',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => appUser.id, { onDelete: 'cascade' }),
+    profileId: text('profile_id')
+      .notNull()
+      .references(() => roleProfile.id),
+    share: numeric('share', { precision: 3, scale: 2 }).notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.profileId] }),
+    check('user_role_blend_share_range', sql`${t.share} BETWEEN 0 AND 1`),
+  ],
+)
+
+export type Skill = typeof skill.$inferSelect
+export type SkillPrerequisite = typeof skillPrerequisite.$inferSelect
+export type SkillState = typeof skillState.$inferSelect
+
+/*
+ * ─── Evidence ledger (M1 task d) ─────────────────────────────────────────
+ *
+ * Shape from docs/DATABASE_DESIGN.md §2, integrity rules from §4, dual
+ * approval from DECISIONS.md §6.1.
+ *
+ * This is the table everything downstream reads: skill promotion, the résumé
+ * advisor, the story bank. Its constraints are the reason the product can be
+ * honest without relying on prompt instructions — a number with no source
+ * cannot be written, so the advisor emits "[NEEDS EVIDENCE: p95 latency]"
+ * rather than inventing one. It has no choice.
+ */
+
+export const evidenceKind = pgEnum('evidence_kind', [
+  'CODE_ARTIFACT',
+  'DESIGN_DOC',
+  'QUERY_OPTIMISATION',
+  'INCIDENT',
+  'DECISION',
+  'LEADERSHIP_EVENT',
+  'COMMUNICATION_REP',
+  'INTERVIEW_RESULT',
+  'PUBLISHED_WRITING',
+  'ASSESSMENT',
+])
+
+export const confidentiality = pgEnum('confidentiality', [
+  'PUBLIC',
+  'EMPLOYER_CONFIDENTIAL',
+  'PRIVATE',
+])
+
+export const evidence = pgTable(
+  'evidence',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => appUser.id, { onDelete: 'cascade' }),
+    kind: evidenceKind('kind').notNull(),
+    title: text('title').notNull(),
+    occurredOn: date('occurred_on').notNull(),
+
+    /*
+     * Default-deny. DECISIONS.md §6.1 specifies DEFAULT 'CONFIDENTIAL', which
+     * is not a value in the confidentiality enum (§2 defines PUBLIC,
+     * EMPLOYER_CONFIDENTIAL, PRIVATE). EMPLOYER_CONFIDENTIAL is the closest
+     * and the more restrictive reading.
+     */
+    classification: confidentiality('classification')
+      .notNull()
+      .default('EMPLOYER_CONFIDENTIAL'),
+
+    /*
+     * Never leaves the database. No repository type carries this field, so
+     * there is no code path that can select it into an AI payload — a compile
+     * error rather than a runtime check. See src/infra/db/evidence.ts.
+     */
+    rawBody: text('raw_body').notNull(),
+    /*
+     * You write this, by hand, as a SANITISE mission. An automatic redactor
+     * would both leak and rob you of the practice, and writing the shareable
+     * form is the exact skill an interview tests (§6.2).
+     */
+    shareableBody: text('shareable_body'),
+    aiAllowed: boolean('ai_allowed').notNull().default(false),
+    publishAllowed: boolean('publish_allowed').notNull().default(false),
+    approvedAt: timestamp('approved_at', { withTimezone: true }),
+
+    metricValue: numeric('metric_value'),
+    metricUnit: text('metric_unit'),
+    metricSource: text('metric_source'),
+    artifactUrl: text('artifact_url'),
+    verified: boolean('verified').notNull().default(false),
+
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    /*
+     * §4.1 — the anti-fabrication constraint. A number without a source and a
+     * unit cannot be persisted by any caller, including one that is mistaken
+     * about its own instructions.
+     */
+    check(
+      'metric_requires_source',
+      sql`${t.metricValue} IS NULL OR (${t.metricSource} IS NOT NULL AND ${t.metricUnit} IS NOT NULL)`,
+    ),
+    // §4.3 — "verified" is a claim about a thing that exists somewhere.
+    check(
+      'verified_requires_artifact',
+      sql`${t.verified} = false OR ${t.artifactUrl} IS NOT NULL`,
+    ),
+
+    // §6.1 — nothing reaches a model without a hand-written shareable form.
+    check(
+      'ai_needs_shareable',
+      sql`${t.aiAllowed} = false OR ${t.shareableBody} IS NOT NULL`,
+    ),
+    // Publishing is strictly narrower than AI processing, never the reverse.
+    check(
+      'publish_needs_ai_ok',
+      sql`${t.publishAllowed} = false OR ${t.aiAllowed} = true`,
+    ),
+    // An approval is an act with a timestamp, not a flag that drifted to true.
+    check(
+      'approval_is_explicit',
+      sql`(${t.aiAllowed} = false AND ${t.publishAllowed} = false) OR ${t.approvedAt} IS NOT NULL`,
+    ),
+  ],
+)
+
+export const evidenceSkill = pgTable(
+  'evidence_skill',
+  {
+    evidenceId: uuid('evidence_id')
+      .notNull()
+      .references(() => evidence.id, { onDelete: 'cascade' }),
+    skillId: text('skill_id')
+      .notNull()
+      .references(() => skill.id),
+    // True only for executed and verified artifacts. The PRACTICAL gate reads
+    // exactly this column, which is why it is not inferred from `kind`.
+    objective: boolean('objective').notNull().default(false),
+  },
+  (t) => [
+    primaryKey({ columns: [t.evidenceId, t.skillId] }),
+    // Partial index: the promotion gate only ever asks for objective rows.
+    index('evidence_skill_objective_idx')
+      .on(t.skillId)
+      .where(sql`${t.objective}`),
   ],
 )

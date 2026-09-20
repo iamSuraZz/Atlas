@@ -37,6 +37,11 @@ jobs:
       - name: Format
         if: '!cancelled()'
         run: npm run format:check
+      # M0_SPEC §3 task 8 specified typecheck -> lint -> unit -> build. The unit
+      # step was absent until M1 gave it something to run.
+      - name: Unit tests
+        if: '!cancelled()'
+        run: npm test
 
       # No DATABASE_URL, and deliberately no dummy one. The app resolves its
       # database lazily (src/infra/db/client.ts), so a build that needs a
