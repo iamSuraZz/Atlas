@@ -250,6 +250,49 @@ estimated_cost         hours to next level, normalised
 
 Default weights: `w1=0.30 w2=0.25 w3=0.15 w4=0.10 w5=0.10 w6=0.07 w7=0.03`. Stored in config, tunable, logged per plan so any day's plan is reproducible.
 
+> **AMENDED 2026-09-21 — M2 task a/b. A property test found a real contradiction
+> between §4.1 and §4.5, and the score was the side that was wrong.**
+>
+> §4.5 emitted *"You rated confidence N/5 last time"*, but no term in §4.1 read
+> self-rating. The clause asserted a reason that had played no part in ranking
+> the node — the exact failure the "generated from the scheduler's own state"
+> design exists to prevent, reached without a model's help.
+>
+> **A term was added rather than the clause deleted.** A rating of 1 means you
+> told the system you could not do it, and throwing that away to protect a
+> formula is the wrong trade.
+>
+> ```
+> w8 · self_rating_deficit      (3 - lastSelfRating) / 2, clamped at 0
+>                               0 when never rated; a confident rating is not a
+>                               reason to avoid a node, only not a reason to pick it
+> ```
+>
+> Revised defaults: **`w1=0.27 w2=0.23 w3=0.15 w4=0.10 w5=0.10 w6=0.07 w7=0.03
+> w8=0.08`**. w1 and w2 were reduced to make room.
+>
+> **w5 stays at 0.10** on revised reasoning. It is thin — 137 of 190 seeded nodes
+> unblock nothing, and the 53 that do split into three tiers — but on a cold
+> start it is the *only* term with any variance, because gap, role relevance and
+> cost are uniform across every node and overdue, saturation and interview
+> proximity have no history to read. It also gains resolution as the prerequisite
+> graph grows, while the others gain resolution only through use. Revisit past
+> ~150 edges.
+>
+> **Priority is signed and never clamped at zero.** A node that is finished,
+> saturated and expensive should rank below one that is merely unremarkable;
+> clamping makes those indistinguishable. Display formats it.
+>
+> **Normalisation bases are fixed, not per-candidate-set.** Normalising
+> `prerequisite_unblocking` or `estimated_cost` against the day's maximum makes
+> the same node score differently depending on who else was a candidate, which
+> contradicts the reproducibility this section promises.
+>
+> **Ties break on a hash of (skill id, plan date).** On a cold start hundreds of
+> nodes tie exactly. Sorting by id pins the alphabetically luckiest nodes to the
+> top forever; random breaks reproducibility. Seeding from the date gives a
+> stable order within a day and a different one tomorrow.
+
 ### 4.2 Plan construction
 
 Greedy fill against the minute budget under constraints:
@@ -259,6 +302,25 @@ Greedy fill against the minute budget under constraints:
 3. **Load shape.** Hardest mission first — you have more capacity at the start of a session.
 4. **One primary.** Exactly one mission is the headline; the rest are collapsed. Reduces decision fatigue.
 5. **Budget honesty.** If the top-priority mission does not fit the budget, pick a smaller piece of the same node rather than a different node.
+
+> **AMENDED 2026-09-21 — M2 task a. Three points where the constraints above
+> disagreed with each other or with §4.3.**
+>
+> - **The primary leads the list, even when it is not the hardest.** Constraint 3
+>   wants the hardest mission first for load shape; constraint 4 wants one
+>   headline. A headline buried third is not a headline, so the primary leads and
+>   the remainder carries the load shape.
+> - **LIGHT is exempt from thread quotas.** §4.3 calls LIGHT "review plus one
+>   short mission". Applying DSA, system design, communication and review shares
+>   to a 30-minute budget leaves the theme nothing and produces four two-minute
+>   fragments. A light day is not a compressed normal day.
+> - **`buildPlan` returns decay decisions; it does not apply them.** §4.4 says
+>   decay is applied silently after seven days, but the scheduler is pure — it
+>   proposes, and the mastery gate performs the write, so the state change and its
+>   audit row stay together.
+>
+> Also: the ten-minute re-entry caps the **budget**, not only the mission count.
+> A single 22-minute mission is still a catch-up attempt.
 
 ### 4.3 LIGHT / NORMAL / DEEP
 
@@ -302,6 +364,32 @@ function explain(node: ScoredNode): string[] {
 Rendered: *"Last reviewed 11d ago · Blocks 3 skills incl. system-design/scalability · You rated confidence 2/5 last time"*
 
 It cannot lie about its reasoning because it is generated from the reasoning. This is a small thing that does a lot of work for trust.
+
+> **AMENDED 2026-09-21 — M2 task b. The claim above is now enforced rather than
+> asserted.**
+>
+> The invariant: **a clause may only be emitted when the scoring term it derives
+> from made a non-zero contribution to the priority that selected the node.** A
+> property test over 7,000 generated nodes and weight sets — a third of the
+> weights zeroed at random — checks that every emitted clause names a live term,
+> that the contribution it reports equals `weight × term`, and that no clause
+> ever cites `recent_saturation` or `estimated_cost`, since a sentence
+> explaining why a node was *chosen* cannot cite a reason it was nearly rejected.
+>
+> Consequences:
+>
+> - Every clause carries `term`, `weightKey` and `contribution`, so the property
+>   is mechanically checkable rather than checked by reading.
+> - `explain(node)` takes one argument. The weights travel on the scored node,
+>   so a caller cannot hand it a different set than the one that ranked.
+> - **A weight tuned to zero silences its clause**, even when the underlying
+>   condition is plainly true. That factor did not influence today's plan.
+> - The confidence clause is emittable again because §4.1 now scores it (w8).
+>
+> **A `GAP` clause was added**: *"N levels below your PRACTICAL target"*, from
+> `gap_size`/w1. w1 is the largest weight and had no clause, so the explanation
+> could never mention the biggest driver of the ranking. Clause order is GAP,
+> OVERDUE, UNBLOCKS, ROLE_WEIGHT, CONFIDENCE, INTERVIEW.
 
 ---
 

@@ -1,12 +1,12 @@
-import { sql } from 'drizzle-orm'
+import { desc, sql } from 'drizzle-orm'
 import {
-  boolean,
   bigserial,
+  boolean,
   check,
   date,
   index,
-  uniqueIndex,
   integer,
+  jsonb,
   numeric,
   pgEnum,
   pgTable,
@@ -14,6 +14,8 @@ import {
   smallint,
   text,
   timestamp,
+  unique,
+  uniqueIndex,
   uuid,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core'
@@ -496,3 +498,159 @@ export const evidenceSkill = pgTable(
       .where(sql`${t.objective}`),
   ],
 )
+
+/*
+ * ─── Daily plan and missions (M2 task c) ─────────────────────────────────
+ *
+ * Shape from docs/DATABASE_DESIGN.md §2.
+ *
+ * `intensity` and `status` are text with a CHECK rather than enums, matching
+ * §2: both are small closed sets that may gain a value, and adding one to a
+ * CHECK is an ALTER rather than the enum dance.
+ */
+
+export const missionFormat = pgEnum('mission_format', [
+  'EXPLAIN',
+  'BUILD',
+  'DEBUG',
+  'READ_CODE',
+  'QUERY',
+  'DESIGN',
+  'DEFEND',
+  'TEACH',
+  'REVIEW',
+  'INTERVIEW',
+  'APPLY_TO_PROJECT',
+])
+
+export const dailyPlan = pgTable(
+  'daily_plan',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => appUser.id, { onDelete: 'cascade' }),
+    planDate: date('plan_date').notNull(),
+    intensity: text('intensity').notNull(),
+    budgetMinutes: integer('budget_minutes').notNull(),
+    /*
+     * The scheduler weights this plan was built with. Stored per plan rather
+     * than read from config at display time, because config is tunable: without
+     * this column, changing a weight silently rewrites the reasoning behind
+     * every plan already generated. With it, any day's plan can be recomputed
+     * exactly as it was.
+     */
+    weights: jsonb('weights').notNull(),
+    generatedAt: timestamp('generated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // One plan per day. Regenerating replaces rather than accumulates.
+    unique('daily_plan_user_date_unique').on(t.userId, t.planDate),
+    check('daily_plan_intensity', sql`${t.intensity} IN ('LIGHT','NORMAL','DEEP')`),
+    check('daily_plan_budget_positive', sql`${t.budgetMinutes} > 0`),
+  ],
+)
+
+export const mission = pgTable(
+  'mission',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    dailyPlanId: uuid('daily_plan_id')
+      .notNull()
+      .references(() => dailyPlan.id, { onDelete: 'cascade' }),
+    skillId: text('skill_id')
+      .notNull()
+      .references(() => skill.id),
+    format: missionFormat('format').notNull(),
+    title: text('title').notNull(),
+    brief: text('brief').notNull(),
+    /*
+     * Generated from the scheduler's own terms, never by a model. Stored as
+     * the rendered clauses so the plan reads the same a month later even if
+     * the weights have since been tuned.
+     */
+    why: text('why').array().notNull(),
+    estMinutes: integer('est_minutes').notNull(),
+    priorityScore: numeric('priority_score', { precision: 6, scale: 3 }).notNull(),
+    isPrimary: boolean('is_primary').notNull().default(false),
+    status: text('status').notNull().default('PENDING'),
+    actualMinutes: integer('actual_minutes'),
+    confidence: smallint('confidence'),
+    reflection: text('reflection'),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+  },
+  (t) => [
+    check(
+      'mission_status',
+      sql`${t.status} IN ('PENDING','IN_PROGRESS','DONE','SKIPPED','EXPIRED')`,
+    ),
+    check('mission_confidence_range', sql`${t.confidence} BETWEEN 1 AND 5`),
+
+    /*
+     * §4.2 constraint 4: exactly one headline mission. A partial unique index
+     * is the whole enforcement — indexing only the rows where is_primary is
+     * true means the uniqueness applies to those rows and nothing else, so a
+     * plan may hold many non-primary missions and exactly one primary.
+     */
+    uniqueIndex('one_primary_per_plan')
+      .on(t.dailyPlanId)
+      .where(sql`${t.isPrimary}`),
+
+    /*
+     * The 72h format-rotation lookback (§4.2 constraint 2). Partial on
+     * status='DONE' because a mission you did not complete did not use up a
+     * format, and composite with completed_at DESC so the recent rows for a
+     * skill are the leading entries rather than a sort of the whole match.
+     */
+    index('mission_skill_recent_idx')
+      .on(t.skillId, desc(t.completedAt))
+      .where(sql`${t.status} = 'DONE'`),
+  ],
+)
+
+export type DailyPlanRow = typeof dailyPlan.$inferSelect
+export type MissionRow = typeof mission.$inferSelect
+
+/*
+ * ─── Attempts (M2 task e) ────────────────────────────────────────────────
+ *
+ * Shape from docs/DATABASE_DESIGN.md §2, with one column omitted:
+ * `question_id uuid REFERENCES question(id)` — the `question` table belongs to
+ * the adaptive assessment engine, which DECISIONS.md §4 cut. When a question
+ * bank exists the column is an additive ALTER.
+ *
+ * One row per submission. This is the raw record the mastery gate reads:
+ * `objective_passed` is authoritative where it is not null, and null means no
+ * objective evaluation was possible for that format — which is precisely the
+ * distinction §3.1's PRACTICAL gate turns on.
+ */
+export const attempt = pgTable('attempt', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => appUser.id, { onDelete: 'cascade' }),
+  /** Null for practice outside a planned mission. */
+  missionId: uuid('mission_id').references(() => mission.id),
+  /*
+   * Deep-dive / interview session, not the auth session. No FK: that table
+   * arrives in M3 and naming it here would be a forward reference.
+   */
+  sessionId: uuid('session_id'),
+  skillId: text('skill_id')
+    .notNull()
+    .references(() => skill.id),
+  response: text('response').notNull(),
+  /** Authoritative when present — a query plan, a test run, rows returned. */
+  objectiveResult: jsonb('objective_result'),
+  /** Null when the format admits no objective evaluation. */
+  objectivePassed: boolean('objective_passed'),
+  /** Advisory only: [{check_id, passed, note}]. Never overrides the objective. */
+  rubricResult: jsonb('rubric_result'),
+  durationSeconds: integer('duration_seconds'),
+  usedHints: smallint('used_hints').notNull().default(0),
+  // AI-off drills record this, so an assisted attempt cannot masquerade as solo.
+  aiAssisted: boolean('ai_assisted').notNull().default(false),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+export type AttemptRow = typeof attempt.$inferSelect
