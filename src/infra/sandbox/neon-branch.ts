@@ -1,4 +1,5 @@
 import 'server-only'
+import { SANDBOX_PREFIX, deletionRefusal } from '@/lib/sandbox-branch'
 
 /*
  * Disposable SQL sandbox for QUERY missions. ADR-018: "a Neon branch per
@@ -97,19 +98,59 @@ export async function createSandbox(missionId: string): Promise<Sandbox> {
   return { branchId: created.branch.id, connectionString: uri }
 }
 
+/**
+ * Whether this branch may be deleted, as a message or null. Pure, so the rule
+ * is testable without a Neon project.
+ *
+ * Refuses to delete anything that is not a sandbox.
+ *
+ * `dropSandbox` takes a branch id, and a branch id is an opaque string — the
+ * one caller today passes an id it created, but this is the only code path in
+ * the application that can destroy a database, and "the caller is careful" is
+ * not a control. So the name is fetched and checked, and the two ids that must
+ * never be deleted are refused outright regardless of what they are called.
+ *
+ * Two API calls to delete one throwaway branch is the right trade: the branch
+ * is copy-on-write and costs almost nothing, and the failure this prevents is
+ * unrecoverable.
+ */
+async function assertDeletable(projectId: string, branchId: string): Promise<void> {
+  const pins = {
+    development: process.env.ATLAS_DB_BRANCH_ID?.trim() ?? null,
+    production: process.env.ATLAS_PROD_BRANCH_ID?.trim() ?? null,
+  }
+
+  // The pinned check first, so a pinned id is refused without a network call.
+  const early = deletionRefusal(branchId, `${SANDBOX_PREFIX}assumed`, pins)
+  if (early !== null) throw new SandboxUnavailableError(early)
+
+  const branch = (await neonApi(`/projects/${projectId}/branches/${branchId}`, {
+    method: 'GET',
+  })) as { branch?: { name?: string } }
+
+  const refusal = deletionRefusal(branchId, branch.branch?.name ?? null, pins)
+  if (refusal !== null) throw new SandboxUnavailableError(refusal)
+}
+
 /** Drops the branch. Safe to call twice; a missing branch is not an error here. */
 export async function dropSandbox(branchId: string): Promise<void> {
   const { projectId } = credentials()
 
   try {
+    await assertDeletable(projectId, branchId)
     await neonApi(`/projects/${projectId}/branches/${branchId}`, { method: 'DELETE' })
-  } catch {
+  } catch (error) {
     /*
-     * Swallowed deliberately. This runs in a finally block; throwing here would
-     * replace a real mission error with a cleanup error and lose the original.
-     * An orphaned branch is visible in the Neon console and named for its
-     * mission.
+     * Cleanup failures are swallowed: this runs in a finally block, and
+     * throwing here would replace a real mission error with a cleanup error
+     * and lose the original. An orphaned branch is visible in the Neon console
+     * and named for its mission.
+     *
+     * A REFUSAL is different and is not swallowed silently. It means something
+     * asked this module to delete a branch that is not a sandbox, which is the
+     * one event in this file worth waking someone for.
      */
+    if (error instanceof SandboxUnavailableError) console.error(error.message)
   }
 }
 

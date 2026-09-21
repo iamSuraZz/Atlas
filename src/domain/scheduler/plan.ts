@@ -1,5 +1,6 @@
 import { explain } from './explain'
 import { rankCandidates } from './priority'
+import { eligibleFormats, isEligibleForThread } from './threads'
 import type {
   Candidate,
   DecayDecision,
@@ -58,14 +59,15 @@ const FORMAT_DIFFICULTY: Record<MissionFormat, number> = {
   APPLY_TO_PROJECT: 4,
   DESIGN: 5,
   INTERVIEW: 5,
-}
-
-const THREAD_FORMATS: Record<Thread, readonly MissionFormat[]> = {
-  DSA: ['BUILD', 'EXPLAIN'],
-  SYSTEM_DESIGN: ['DESIGN', 'DEFEND'],
-  COMMUNICATION: ['EXPLAIN', 'TEACH'],
-  REVIEW: ['REVIEW'],
-  THEME: ['QUERY', 'DEBUG', 'BUILD', 'READ_CODE', 'EXPLAIN', 'DESIGN'],
+  /*
+   * Data & ML formats. WATCH is the cheapest thing in the system — it is
+   * deliberately a 10-minute unit, because the §8 videos are how a phase
+   * starts and a 28-minute "watch" is really a lecture nobody begins.
+   */
+  WATCH: 1,
+  MATH_BY_HAND: 3,
+  VISUALIZE: 3,
+  NOTEBOOK: 4,
 }
 
 const MINUTES_72H = 72 * 60 * 60 * 1000
@@ -96,7 +98,16 @@ type Slot = { readonly thread: Thread; readonly minutes: number }
  */
 function slotsFor(input: PlanInput): Slot[] {
   if (input.intensity === 'LIGHT') {
-    return [{ thread: 'REVIEW', minutes: Math.round(input.budgetMinutes * 0.4) }]
+    /*
+     * §4.3: "review plus one short mission". Both slots are real now — REVIEW
+     * draws only from practised nodes (M-DS task b), so on a graph that is
+     * still entirely UNASSESSED a review-only LIGHT day would be empty.
+     */
+    const review = Math.round(input.budgetMinutes * 0.4)
+    return [
+      { thread: 'REVIEW', minutes: review },
+      { thread: 'THEME', minutes: input.budgetMinutes - review },
+    ]
   }
 
   const slots: Slot[] = []
@@ -189,8 +200,14 @@ export function buildPlan(input: PlanInput): Plan {
       if (chosen.length >= cap) break
       if (usedSkills.has(node.skillId)) continue
       if (slotSpent >= slot.minutes) break
+      /*
+       * The gate. Before M-DS task b every slot picked from the whole ranked
+       * list, so a thread was a time slice with a label rather than a filter —
+       * and an inactive phase was decoration.
+       */
+      if (!isEligibleForThread(node, slot.thread, effective.activePhases)) continue
 
-      const format = THREAD_FORMATS[slot.thread].find(
+      const format = eligibleFormats(node, slot.thread).find(
         (candidateFormat) =>
           canUseFormat(candidateFormat) &&
           formatIsFresh(node, candidateFormat, effective.now),

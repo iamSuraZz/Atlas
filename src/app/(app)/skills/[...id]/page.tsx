@@ -10,6 +10,7 @@ import {
 } from '@/domain/skills/mastery'
 import { getAuth } from '@/infra/auth/server'
 import { listEvidenceForSkill } from '@/infra/db/evidence'
+import { resourcesForSkill, type LearnResource } from '@/infra/db/resources'
 import { getSkillDetail } from '@/infra/db/skills'
 
 export const dynamic = 'force-dynamic'
@@ -55,6 +56,89 @@ const OBSERVABLE: ReadonlySet<Requirement> = new Set<Requirement>([
 const formatDate = (date: Date | null) =>
   date === null ? '—' : date.toISOString().slice(0, 10)
 
+/*
+ * §8's resource library, grouped as M-DS task d asks: Watch, Play, Course,
+ * Read. Free first inside each group.
+ *
+ * Only four of the seven `resource_kind` values can actually reach this screen
+ * today — the Books, Practise and Tools sections of §8 carry no phase tag, so
+ * the seeder derives no skill links for them. The other three are mapped
+ * anyway rather than dropped, so adding a phase to one of those sections later
+ * changes the seed and not this file.
+ */
+const LEARN_GROUPS = [
+  { heading: 'Watch', kinds: ['WATCH'] },
+  { heading: 'Play', kinds: ['PLAY', 'PRACTISE'] },
+  { heading: 'Course', kinds: ['COURSE'] },
+  { heading: 'Read', kinds: ['READ_FREE', 'READ_BOOK'] },
+  { heading: 'Tools', kinds: ['TOOL'] },
+] as const
+
+/** Free first, then unstated, then paid. `free` is nullable where §8 is silent. */
+const freeRank = (free: boolean | null): number =>
+  free === true ? 0 : free === null ? 1 : 2
+
+function LearnIt({ resources }: { resources: readonly LearnResource[] }) {
+  if (resources.length === 0) return null
+
+  const groups = LEARN_GROUPS.map((group) => ({
+    heading: group.heading,
+    items: resources
+      .filter((r) => (group.kinds as readonly string[]).includes(r.kind))
+      .sort(
+        (a, b) => freeRank(a.free) - freeRank(b.free) || a.title.localeCompare(b.title),
+      ),
+  })).filter((group) => group.items.length > 0)
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Learn it</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-6 pt-0">
+        <p className="text-step-0 text-text-3">
+          From DATA_ML_TRACK.md §8. Visual first, always — that is the ordering, not a
+          preference.
+        </p>
+        {groups.map((group) => (
+          <div key={group.heading} className="flex flex-col gap-2">
+            <h3 className="text-step-0 text-text-3 font-mono tracking-widest uppercase">
+              {group.heading}
+            </h3>
+            <ul className="flex flex-col gap-1.5">
+              {group.items.map((r) => (
+                <li key={r.id} className="flex flex-wrap items-baseline gap-2">
+                  {r.url === null ? (
+                    <span className="text-step-1">{r.title}</span>
+                  ) : (
+                    <a
+                      href={r.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-step-1 text-accent underline underline-offset-2"
+                    >
+                      {r.title}
+                    </a>
+                  )}
+                  {r.free === true && (
+                    <span className="text-step-0 text-ok font-mono">free</span>
+                  )}
+                  {r.free === false && (
+                    <span className="text-step-0 text-text-3 font-mono">paid</span>
+                  )}
+                  {r.note !== null && (
+                    <span className="text-step-0 text-text-3">{r.note}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  )
+}
+
 export default async function SkillDetailPage({
   params,
 }: {
@@ -95,6 +179,8 @@ export default async function SkillDetailPage({
     },
   })
 
+  const learn = await resourcesForSkill(detail.skill.id)
+
   const actionable = verdict.blockedBy.filter((b) => OBSERVABLE.has(b.requirement))
   const untracked = verdict.blockedBy.filter((b) => !OBSERVABLE.has(b.requirement))
 
@@ -111,12 +197,14 @@ export default async function SkillDetailPage({
         <p className="text-step-1 text-text-2 max-w-prose">{detail.skill.description}</p>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-3">
         {[
           ['State', detail.state ?? 'UNASSESSED'],
           ['Last practised', formatDate(detail.lastPractised)],
           ['Next review', formatDate(detail.nextReview)],
           ['Decay class', detail.skill.decay],
+          ['Track', detail.skill.track === 'DATA_ML' ? 'Data & ML' : 'Engineering'],
+          ['Phase', detail.skill.phase ?? '—'],
         ].map(([label, value]) => (
           <Card key={label}>
             <CardContent className="p-4">
@@ -128,6 +216,8 @@ export default async function SkillDetailPage({
           </Card>
         ))}
       </div>
+
+      <LearnIt resources={learn} />
 
       <Card>
         <CardHeader>

@@ -14,13 +14,14 @@
  */
 import { readFileSync } from 'node:fs'
 import { neon } from '@neondatabase/serverless'
+import { WrongTargetError, assertWritableTarget } from './lib/branch-guard.mjs'
 
 /*
- * 190 = 29 topic nodes + 161 leaves. Not the "~90" §2 claims, and not the 187
- * first reported here — that count came from a parser that silently dropped
- * the wrapped brace lists for postgres and interview.
+ * 207 = 30 topic nodes + 177 leaves. Was 190 until M-DS ruling 6 added the
+ * `dsa` subtree; before that it was briefly reported as 187, from a parser
+ * that silently dropped the wrapped brace lists for postgres and interview.
  */
-const EXPECTED_NODES = 190
+const EXPECTED_NODES = 207
 
 // ── assumptions, each recorded because no source supplies the value ────────
 //
@@ -39,6 +40,12 @@ const EXPECTED_NODES = 190
 
 /** §3.2 gives examples, not a full mapping. These rules are that mapping. */
 const DECAY_RULES = [
+  /*
+   * Before the ENGINEERING_CORE rule, deliberately. `dsa` sits in that
+   * category but decays like interview recall, not like code you write daily:
+   * a pattern untouched for a month is one you cannot produce under pressure.
+   */
+  { match: (_c, topic) => topic === 'dsa', decay: 'RECALL_HEAVY' },
   // "React, Node, TS — used at work"
   { match: (cat) => cat === 'ENGINEERING_CORE', decay: 'PROCEDURAL_DAILY' },
   { match: (_c, topic) => topic === 'delivery', decay: 'PROCEDURAL_DAILY' },
@@ -163,7 +170,13 @@ async function main() {
     return
   }
 
-  const sql = neon(process.env.DATABASE_URL_UNPOOLED)
+  // Everything above this line is parsing and validation against the document.
+  // Everything below it writes. The target is confirmed here, in between.
+  const connectionString = process.env.DATABASE_URL_UNPOOLED
+  console.log('')
+  await assertWritableTarget(connectionString, 'seed the skill graph')
+
+  const sql = neon(connectionString)
 
   // Topics first: a leaf's parent_id must already exist.
   for (const group of [
@@ -201,11 +214,16 @@ async function main() {
 
   const [user] = await sql`SELECT id FROM app_user LIMIT 1`
   if (user) {
-    // Shares must sum to 1.00; the constraint trigger enforces it.
-    await sql`
-      INSERT INTO user_role_blend (user_id, profile_id, share) VALUES
-        (${user.id}, 'A_PRODUCT_SENIOR', 0.70), (${user.id}, 'B_AI_PRODUCT', 0.30)
-      ON CONFLICT (user_id, profile_id) DO UPDATE SET share = EXCLUDED.share`
+    /*
+     * The role blend is NOT written here. It used to be — A 0.70 / B 0.30 —
+     * and once M-DS ruling 5 made db:seed run both seeders in sequence, this
+     * statement and scripts/seed/data-ml.mjs fought over the same three rows:
+     * this one set A and B, leaving C at 0.35 from the other, and the
+     * sum-to-1.00 trigger rejected the result.
+     *
+     * One writer. scripts/seed/data-ml.mjs owns the blend, because the blend
+     * is a statement about which track you are on.
+     */
 
     // Every node starts UNASSESSED. No baseline exists.
     await sql`
@@ -220,4 +238,11 @@ async function main() {
 }
 
 // Only run when invoked directly; the parser is imported by the unit test.
-if (process.argv[1] && process.argv[1].endsWith('seed-skills.mjs')) await main()
+if (process.argv[1] && process.argv[1].endsWith('seed-skills.mjs')) {
+  await main().catch((error) => {
+    // A refusal is an operator-facing message, not a crash.
+    if (error instanceof WrongTargetError) console.error(`\n${error.message}`)
+    else console.error('Seed failed:', error)
+    process.exit(1)
+  })
+}

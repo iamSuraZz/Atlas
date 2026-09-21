@@ -2,6 +2,7 @@
   "name": "atlas",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -15,10 +16,15 @@
     "verify:boundaries": "node scripts/verify-boundaries.mjs",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node --env-file=.env.local src/infra/db/migrate.ts",
+    "db:migrate:prod": "node --env-file=.env.production.local src/infra/db/migrate.ts",
     "test:e2e": "playwright test",
     "test": "vitest run",
     "test:watch": "vitest",
-    "db:seed": "node --env-file=.env.local scripts/seed-skills.mjs"
+    "db:seed": "node --env-file=.env.local scripts/seed-all.mjs",
+    "db:seed:prod": "node --env-file=.env.production.local scripts/seed-all.mjs",
+    "db:seed:track": "node --env-file=.env.local scripts/seed-track.mjs",
+    "db:where": "node --env-file=.env.local scripts/whereami.mjs",
+    "db:seed:skills": "node --env-file=.env.local scripts/seed-skills.mjs"
   },
   "dependencies": {
     "@better-auth/passkey": "^1.7.5",

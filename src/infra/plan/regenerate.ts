@@ -1,4 +1,4 @@
-import { buildPlan, budgetFor, DEFAULT_WEIGHTS, type Thread } from '@/domain/scheduler'
+import { buildPlan, budgetFor, DEFAULT_WEIGHTS, PHASE_1_QUOTAS } from '@/domain/scheduler'
 import { loadCandidates } from '@/infra/db/candidates'
 import { applyDecayDecisions } from '@/infra/db/mastery'
 import { savePlan, type Intensity } from '@/infra/db/plans'
@@ -13,16 +13,11 @@ import { savePlan, type Intensity } from '@/infra/db/plans'
  */
 
 /*
- * §4.2 constraint 1: threads get their share before the dominant theme takes
- * the rest. Shares are a scheduling policy rather than a user setting, so they
- * live here until something needs to tune them.
+ * Quotas now come from the domain: DATA_ML_TRACK.md §3.2 replaced the four
+ * placeholder shares that used to live here, and adding the Data & ML thread
+ * without them would have left the new track 0% of every week.
  */
-const THREAD_QUOTAS: readonly { thread: Thread; share: number }[] = [
-  { thread: 'DSA', share: 0.2 },
-  { thread: 'SYSTEM_DESIGN', share: 0.15 },
-  { thread: 'COMMUNICATION', share: 0.1 },
-  { thread: 'REVIEW', share: 0.15 },
-]
+const THREAD_QUOTAS = PHASE_1_QUOTAS
 
 const MS_PER_DAY = 86_400_000
 
@@ -32,7 +27,7 @@ export async function regenerateTodayPlan(
   now: Date,
   options: { lastActiveOn?: Date | null } = {},
 ): Promise<void> {
-  const { candidates, lastActiveOn } = await loadCandidates(userId, now)
+  const { candidates, lastActiveOn, activePhases } = await loadCandidates(userId, now)
   const budget = budgetFor(intensity)
 
   /*
@@ -53,6 +48,7 @@ export async function regenerateTodayPlan(
     budgetMinutes: Math.round((budget.min + budget.max) / 2),
     candidates,
     threadQuotas: THREAD_QUOTAS,
+    activePhases,
     daysMissed,
     weights: DEFAULT_WEIGHTS,
     context: {

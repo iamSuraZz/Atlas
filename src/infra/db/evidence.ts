@@ -75,3 +75,61 @@ export async function listEvidenceForSkill(
     .innerJoin(evidenceSkill, eq(evidenceSkill.evidenceId, evidence.id))
     .where(and(eq(evidence.userId, userId), eq(evidenceSkill.skillId, skillId)))
 }
+
+/*
+ * ─── Write path (M-DS task c) ────────────────────────────────────────────
+ *
+ * The only function in this module that inserts. It takes a draft built by
+ * src/domain/runner/formats.ts, so what goes into the ledger is decided by a
+ * pure, tested function rather than assembled at a call site.
+ *
+ * Nothing here sets `ai_allowed`, `publish_allowed` or `approved_at`. Those
+ * are separate, explicit acts (DECISIONS.md §6.1), and a runner that granted
+ * them would make submitting a notebook a silent approval of its contents.
+ */
+
+export type NewEvidence = {
+  readonly userId: string
+  readonly skillId: string
+  readonly kind: 'CODE_ARTIFACT'
+  /** Default-deny. The runner writes PRIVATE; promotion is a separate act. */
+  readonly classification: 'PRIVATE'
+  readonly title: string
+  readonly occurredOn: string
+  readonly rawBody: string
+  readonly metricValue: number | null
+  readonly metricUnit: string | null
+  readonly metricSource: string | null
+  readonly artifactUrl: string
+  /** Whether this counts toward the PRACTICAL gate. */
+  readonly objective: boolean
+}
+
+export async function recordEvidence(row: NewEvidence): Promise<string> {
+  const db = getDb()
+
+  const [created] = await db
+    .insert(evidence)
+    .values({
+      userId: row.userId,
+      kind: row.kind,
+      classification: row.classification,
+      title: row.title,
+      occurredOn: row.occurredOn,
+      rawBody: row.rawBody,
+      // numeric arrives and departs as a string; see mappers.ts.
+      metricValue: row.metricValue === null ? null : String(row.metricValue),
+      metricUnit: row.metricUnit,
+      metricSource: row.metricSource,
+      artifactUrl: row.artifactUrl,
+    })
+    .returning({ id: evidence.id })
+
+  if (!created) throw new Error('evidence insert returned no row')
+
+  await db
+    .insert(evidenceSkill)
+    .values({ evidenceId: created.id, skillId: row.skillId, objective: row.objective })
+
+  return created.id
+}

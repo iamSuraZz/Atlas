@@ -1,6 +1,6 @@
 import { and, desc, eq, gte, inArray, sql } from 'drizzle-orm'
 import { getDb } from './client'
-import { dailyPlan, mission } from './schema'
+import { dailyPlan, mission, skill, type missionFormat } from './schema'
 
 /*
  * Daily plans and their missions.
@@ -12,18 +12,16 @@ import { dailyPlan, mission } from './schema'
 
 export type Intensity = 'LIGHT' | 'NORMAL' | 'DEEP'
 
-export type MissionFormatName =
-  | 'EXPLAIN'
-  | 'BUILD'
-  | 'DEBUG'
-  | 'READ_CODE'
-  | 'QUERY'
-  | 'DESIGN'
-  | 'DEFEND'
-  | 'TEACH'
-  | 'REVIEW'
-  | 'INTERVIEW'
-  | 'APPLY_TO_PROJECT'
+/*
+ * Derived from the enum, not restated.
+ *
+ * This was a hand-written union until M-DS task a added WATCH, NOTEBOOK,
+ * MATH_BY_HAND and VISUALIZE — at which point the column could hold four
+ * values this type denied, and every read of it was a lie the compiler had
+ * been talked out of noticing. The enum is the single source; a value added
+ * there now widens this automatically.
+ */
+export type MissionFormatName = (typeof missionFormat.enumValues)[number]
 
 export type NewMission = {
   readonly skillId: string
@@ -122,6 +120,8 @@ export type StoredPlan = {
     readonly isPrimary: boolean
     readonly status: string
     readonly completedAt: Date | null
+    /** 'ENGINEERING' or 'DATA_ML'. TODAY tags each mission with it. */
+    readonly track: string
   }[]
 }
 
@@ -139,8 +139,24 @@ export async function getPlanForDate(
   if (!plan) return null
 
   const missions = await db
-    .select()
+    .select({
+      id: mission.id,
+      skillId: mission.skillId,
+      format: mission.format,
+      title: mission.title,
+      brief: mission.brief,
+      why: mission.why,
+      estMinutes: mission.estMinutes,
+      priorityScore: mission.priorityScore,
+      isPrimary: mission.isPrimary,
+      status: mission.status,
+      completedAt: mission.completedAt,
+      // The track comes from the skill, not the mission: a mission is work on
+      // a node, and the node is what belongs to a curriculum.
+      track: skill.track,
+    })
     .from(mission)
+    .innerJoin(skill, eq(skill.id, mission.skillId))
     .where(eq(mission.dailyPlanId, plan.id))
     // Hardest first is the scheduler's ordering (§4.2 constraint 3); priority is
     // the stored proxy for it, so a re-read preserves the order it was built in.
@@ -165,6 +181,7 @@ export async function getPlanForDate(
       isPrimary: m.isPrimary,
       status: m.status,
       completedAt: m.completedAt,
+      track: m.track,
     })),
   }
 }
@@ -270,6 +287,8 @@ export type MissionForUser = {
   readonly why: readonly string[]
   readonly estMinutes: number
   readonly status: string
+  /** MATH_BY_HAND's expected answer, or null. Shape owned by domain/runner. */
+  readonly checkSpec: unknown | null
 }
 
 /**
@@ -290,6 +309,7 @@ export async function getMissionForUser(
       why: mission.why,
       estMinutes: mission.estMinutes,
       status: mission.status,
+      checkSpec: mission.checkSpec,
     })
     .from(mission)
     .innerJoin(dailyPlan, eq(dailyPlan.id, mission.dailyPlanId))
