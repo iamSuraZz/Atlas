@@ -3,7 +3,14 @@ import { HALF_LIFE_DAYS, type DecayClass } from '@/domain/review/decay'
 import { MASTERY_ORDER, type MasteryState } from '@/domain/skills/mastery'
 import type { Candidate, MissionFormat } from '@/domain/scheduler'
 import { getDb } from './client'
-import { dailyPlan, mission, skill, skillPrerequisite, skillState } from './schema'
+import {
+  activePhase,
+  dailyPlan,
+  mission,
+  skill,
+  skillPrerequisite,
+  skillState,
+} from './schema'
 
 /*
  * Assembles the scheduler's input from the database, in one round trip.
@@ -29,6 +36,8 @@ export type CandidateLoad = {
   readonly candidates: Candidate[]
   /** Most recent day that has a plan. Null when there has never been one. */
   readonly lastActiveOn: Date | null
+  /** The phases the user is working through. Empty means nothing is active. */
+  readonly activePhases: string[]
 }
 
 export async function loadCandidates(userId: string, now: Date): Promise<CandidateLoad> {
@@ -37,7 +46,10 @@ export async function loadCandidates(userId: string, now: Date): Promise<Candida
   const rows = await getDb()
     .select({
       skillId: skill.id,
+      // A node's own id when it is a topic, its parent's when it is a leaf.
+      topic: sql<string>`COALESCE(${skill.parentId}, ${skill.id})`,
       category: skill.category,
+      phase: skill.phase,
       decay: skill.decay,
       marketWeight: skill.marketWeight,
       hoursToPractical: skill.hoursToPractical,
@@ -92,6 +104,17 @@ export async function loadCandidates(userId: string, now: Date): Promise<Candida
         SELECT max(${dailyPlan.planDate}) FROM ${dailyPlan}
         WHERE ${dailyPlan.userId} = ${userId} AND ${dailyPlan.planDate} < ${now.toISOString().slice(0, 10)}
       )`,
+
+      /*
+       * The active phases, also carried on every row and also constant per
+       * query. THEME and DATA_ML draw only from these, so without it every
+       * phase-gated thread would be empty — and a separate query for four
+       * short strings is a round trip this cannot afford.
+       */
+      activePhases: sql<string[]>`COALESCE((
+        SELECT json_agg(${activePhase.phase})
+        FROM ${activePhase} WHERE ${activePhase.userId} = ${userId}
+      ), '[]'::json)`,
     })
     .from(skill)
     .leftJoin(
@@ -103,7 +126,9 @@ export async function loadCandidates(userId: string, now: Date): Promise<Candida
 
   const candidates = rows.map((row) => ({
     skillId: row.skillId,
+    topic: row.topic,
     category: row.category,
+    phase: row.phase,
     currentRank: rankOf(row.state ?? 'UNASSESSED'),
     targetRank: rankOf(row.targetState ?? 'PRACTICAL'),
     halfLifeDays: HALF_LIFE_DAYS[row.decay as DecayClass],
@@ -133,5 +158,6 @@ export async function loadCandidates(userId: string, now: Date): Promise<Candida
   return {
     candidates,
     lastActiveOn: lastActive === null ? null : new Date(`${lastActive}T00:00:00Z`),
+    activePhases: rows[0]?.activePhases ?? [],
   }
 }

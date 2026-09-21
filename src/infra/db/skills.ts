@@ -28,6 +28,9 @@ export type SkillRow = {
   readonly id: string
   readonly name: string
   readonly category: string
+  readonly track: string
+  /** Null when the node has not been placed in a phase. */
+  readonly phase: string | null
   /** Null when no skill_state row exists yet — the node has never been touched. */
   readonly state: MasteryStateName | null
   readonly lastPractised: Date | null
@@ -46,6 +49,8 @@ export async function listSkillRows(userId: string): Promise<SkillRow[]> {
       id: skill.id,
       name: skill.name,
       category: skill.category,
+      track: skill.track,
+      phase: skill.phase,
       state: skillState.state,
       lastPractised: skillState.lastPractised,
       nextReview: skillState.nextReview,
@@ -71,6 +76,8 @@ export type SkillDetail = {
     readonly description: string
     readonly category: string
     readonly decay: string
+    readonly track: string
+    readonly phase: string | null
   }
   readonly state: MasteryStateName | null
   readonly lastPractised: Date | null
@@ -101,6 +108,8 @@ export async function getSkillDetail(
       description: skill.description,
       category: skill.category,
       decay: skill.decay,
+      track: skill.track,
+      phase: skill.phase,
       state: skillState.state,
       lastPractised: skillState.lastPractised,
       nextReview: skillState.nextReview,
@@ -149,6 +158,8 @@ export async function getSkillDetail(
       description: node.description,
       category: node.category,
       decay: node.decay,
+      track: node.track,
+      phase: node.phase,
     },
     state: node.state as MasteryStateName | null,
     lastPractised: node.lastPractised,

@@ -8,7 +8,19 @@
 
 export type Intensity = 'LIGHT' | 'NORMAL' | 'DEEP'
 
-export type Thread = 'DSA' | 'SYSTEM_DESIGN' | 'COMMUNICATION' | 'REVIEW' | 'THEME'
+export type Thread =
+  | 'DSA'
+  | 'SYSTEM_DESIGN'
+  | 'COMMUNICATION'
+  | 'REVIEW'
+  | 'THEME'
+  /** The Data & ML curriculum. DATA_ML_TRACK.md §3.2 gives it 30% of a week. */
+  | 'DATA_ML'
+
+/** Which curriculum a node belongs to. Derived from its category; see threads.ts. */
+export type Track = 'ENGINEERING' | 'DATA_ML'
+
+export type ThreadQuota = { readonly thread: Thread; readonly share: number }
 
 export type MissionFormat =
   | 'EXPLAIN'
@@ -22,6 +34,11 @@ export type MissionFormat =
   | 'REVIEW'
   | 'INTERVIEW'
   | 'APPLY_TO_PROJECT'
+  // Data & ML formats (M-DS task a). The runner implements none of these yet.
+  | 'WATCH'
+  | 'NOTEBOOK'
+  | 'MATH_BY_HAND'
+  | 'VISUALIZE'
 
 /**
  * Weights from §4.1, as amended.
@@ -65,7 +82,14 @@ export type RecentFormat = { readonly format: MissionFormat; readonly at: Date }
 
 export type Candidate = {
   readonly skillId: string
+  /** The node's topic — its parent id, or its own id when it is a topic. */
+  readonly topic: string
   readonly category: string
+  /**
+   * Curriculum phase, e.g. 'E1' or 'D3'. Null when unplaced, which is never
+   * eligible for a phase-gated thread — see threads.ts.
+   */
+  readonly phase: string | null
   /** Index into the mastery ladder, 0 = UNASSESSED. */
   readonly currentRank: number
   readonly targetRank: number
@@ -169,7 +193,12 @@ export type PlanInput = {
   readonly intensity: Intensity
   readonly budgetMinutes: number
   readonly candidates: readonly Candidate[]
-  readonly threadQuotas: readonly { thread: Thread; share: number }[]
+  readonly threadQuotas: readonly ThreadQuota[]
+  /**
+   * The phases the user is working through now. THEME and DATA_ML draw only
+   * from these; DSA, SYSTEM_DESIGN, COMMUNICATION and REVIEW ignore them.
+   */
+  readonly activePhases: readonly string[]
   readonly daysMissed: number
   readonly weights: Weights
   readonly context: ScoringContext

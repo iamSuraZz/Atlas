@@ -182,6 +182,11 @@ export const masteryState = pgEnum('mastery_state', [
   'MASTERED',
 ])
 
+/*
+ * The five DATA_ML values are appended, never inserted. `ALTER TYPE ... ADD
+ * VALUE` without BEFORE/AFTER appends, and an enum's declaration order is its
+ * sort order — reordering would silently change every `ORDER BY category`.
+ */
 export const skillCategory = pgEnum('skill_category', [
   'ENGINEERING_CORE',
   'BACKEND',
@@ -190,6 +195,12 @@ export const skillCategory = pgEnum('skill_category', [
   'QUALITY',
   'AI_ENGINEERING',
   'PROFESSIONAL',
+  // ── Data & ML track (DATA_ML_TRACK.md §9.1) ──
+  'MATH_STATS',
+  'DATA_SCIENCE',
+  'MACHINE_LEARNING',
+  'DATA_ENGINEERING',
+  'MLOPS',
 ])
 
 export const decayClass = pgEnum('decay_class', [
@@ -209,6 +220,14 @@ export const artifactPolicy = pgEnum('artifact_policy', [
   'OBJECTIVE_ARTIFACT_AVAILABLE',
   'NO_OBJECTIVE_ARTIFACT',
 ])
+
+/*
+ * Which curriculum a node belongs to. Redundant with `category` today — the
+ * five new categories are all DATA_ML — and kept anyway, because the scheduler
+ * filters by track (DATA_ML_TRACK.md §3.2 quotas) and a category should be
+ * free to move or be shared later without rewriting every query.
+ */
+export const skillTrack = pgEnum('skill_track', ['ENGINEERING', 'DATA_ML'])
 
 export const skill = pgTable(
   'skill',
@@ -232,10 +251,22 @@ export const skill = pgTable(
     marketWeight: numeric('market_weight', { precision: 3, scale: 2 })
       .notNull()
       .default('0.50'),
+    track: skillTrack('track').notNull().default('ENGINEERING'),
+    /*
+     * Curriculum phase, e.g. 'E1' or 'D3' — DATA_ML_TRACK.md §9.2. Nullable so
+     * a node added before anyone decides where it belongs is representable.
+     *
+     * Set on topics AND copied down to their leaves. The scheduler filters
+     * candidates, and candidates are leaves; making it join to the parent on
+     * every scoring pass to learn the same value is cost with no information.
+     */
+    phase: text('phase'),
   },
   (t) => [
     check('skill_no_self_parent', sql`${t.id} <> ${t.parentId}`),
     check('skill_market_weight_range', sql`${t.marketWeight} BETWEEN 0 AND 1`),
+    check('skill_phase_shape', sql`${t.phase} ~ '^[ED][0-9]{1,2}$'`),
+    index('skill_phase_idx').on(t.track, t.phase),
   ],
 )
 
@@ -521,6 +552,13 @@ export const missionFormat = pgEnum('mission_format', [
   'REVIEW',
   'INTERVIEW',
   'APPLY_TO_PROJECT',
+  // ── Data & ML track (DATA_ML_TRACK.md §10.4). The runner does not
+  // implement these yet; the values exist so the seed and scheduler can
+  // reference them without a second enum migration later.
+  'WATCH',
+  'NOTEBOOK',
+  'MATH_BY_HAND',
+  'VISUALIZE',
 ])
 
 export const dailyPlan = pgTable(
@@ -574,6 +612,14 @@ export const mission = pgTable(
     priorityScore: numeric('priority_score', { precision: 6, scale: 3 }).notNull(),
     isPrimary: boolean('is_primary').notNull().default(false),
     status: text('status').notNull().default('PENDING'),
+    /*
+     * The expected answer for a MATH_BY_HAND mission:
+     * { expected, tolerance, unit, worked }. Null for every other format, and
+     * null for MATH_BY_HAND too until something authors problems — which is
+     * M3. The runner degrades honestly rather than inventing an answer to
+     * check against: no spec means objective_passed stays null.
+     */
+    checkSpec: jsonb('check_spec'),
     actualMinutes: integer('actual_minutes'),
     confidence: smallint('confidence'),
     reflection: text('reflection'),
@@ -654,3 +700,169 @@ export const attempt = pgTable('attempt', {
 })
 
 export type AttemptRow = typeof attempt.$inferSelect
+
+/*
+ * ─── Data & ML track (M-DS task a) ───────────────────────────────────────
+ *
+ * Shape from docs/DATA_ML_TRACK.md §10.1. Everything here is reference data
+ * the curriculum documents own; nothing in this block is user-generated.
+ */
+
+/**
+ * Which phases the user is working through right now.
+ *
+ * A table rather than a column on app_user because phases overlap — §9.2 has
+ * E1, E2 and D0 active together, and D1 joining in week 4 is an insert, not a
+ * rewrite. The scheduler's candidate filter is a join against this, so
+ * "activate D1" is one row and takes effect on the next plan.
+ */
+export const activePhase = pgTable(
+  'active_phase',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => appUser.id, { onDelete: 'cascade' }),
+    phase: text('phase').notNull(),
+    activatedAt: timestamp('activated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.phase] }),
+    check('active_phase_shape', sql`${t.phase} ~ '^[ED][0-9]{1,2}$'`),
+  ],
+)
+
+export const resourceKind = pgEnum('resource_kind', [
+  'WATCH',
+  'PLAY',
+  'COURSE',
+  'READ_FREE',
+  'READ_BOOK',
+  'PRACTISE',
+  'TOOL',
+])
+
+/**
+ * The §8 resource library — what to actually go and learn from.
+ *
+ * `url` is nullable because §8's "books worth buying" list has titles and no
+ * links, and a fabricated Amazon URL would be worse than an honest NULL.
+ */
+export const resource = pgTable('resource', {
+  id: text('id').primaryKey(),
+  kind: resourceKind('kind').notNull(),
+  title: text('title').notNull(),
+  url: text('url'),
+  /**
+   * NULL means the document does not say. §8 marks Watch/Play/Courses with a
+   * tick, titles the next two sections "free online" and "worth buying", and
+   * says nothing either way about Practise and Tools. A default of `true`
+   * would turn that silence into a claim.
+   */
+  free: boolean('free'),
+  /**
+   * The phases §8 tags this resource with, verbatim. Kept alongside
+   * `resource_skill` so the derivation that produced those links stays
+   * auditable without re-reading the document.
+   */
+  phases: text('phases').array().notNull(),
+  /** §8's caveats, e.g. "Certificate paid; not needed". */
+  note: text('note'),
+})
+
+/**
+ * Resource → skill.
+ *
+ * DERIVED, and stated as such: §8 tags each resource with phases, not skills,
+ * so a link is created to every topic in those phases (§9.2). That is a
+ * derivation from two documented facts rather than a judgement about content,
+ * which is why it can be regenerated rather than curated.
+ */
+export const resourceSkill = pgTable(
+  'resource_skill',
+  {
+    resourceId: text('resource_id')
+      .notNull()
+      .references(() => resource.id, { onDelete: 'cascade' }),
+    skillId: text('skill_id')
+      .notNull()
+      .references(() => skill.id, { onDelete: 'cascade' }),
+  },
+  (t) => [primaryKey({ columns: [t.resourceId, t.skillId] })],
+)
+
+/**
+ * The §6 project ladder. Fifteen projects, small to big.
+ *
+ * Hours are a min/max pair because §6 gives ranges ("6–8"), and collapsing a
+ * range to its midpoint would persist a number the document does not state.
+ */
+export const buildProject = pgTable(
+  'build_project',
+  {
+    id: text('id').primaryKey(),
+    /** Ladder position, 1-15. Ordering is the point of a ladder. */
+    sequence: integer('sequence').notNull().unique(),
+    name: text('name').notNull(),
+    level: text('level').notNull(),
+    phase: text('phase').notNull(),
+    dataSource: text('data_source').notNull(),
+    proves: text('proves').notNull(),
+    estHoursMin: integer('est_hours_min').notNull(),
+    estHoursMax: integer('est_hours_max').notNull(),
+    brief: text('brief').notNull(),
+  },
+  (t) => [
+    check('build_project_phase_shape', sql`${t.phase} ~ '^[ED][0-9]{1,2}$'`),
+    check('build_project_hours_order', sql`${t.estHoursMin} <= ${t.estHoursMax}`),
+    check('build_project_hours_positive', sql`${t.estHoursMin} > 0`),
+  ],
+)
+
+/** Project → skill. Derived from the project's phase, exactly as resource_skill is. */
+export const buildProjectSkill = pgTable(
+  'build_project_skill',
+  {
+    projectId: text('project_id')
+      .notNull()
+      .references(() => buildProject.id, { onDelete: 'cascade' }),
+    skillId: text('skill_id')
+      .notNull()
+      .references(() => skill.id, { onDelete: 'cascade' }),
+  },
+  (t) => [primaryKey({ columns: [t.projectId, t.skillId] })],
+)
+
+/**
+ * A project you have finished. M-DS task d.
+ *
+ * The artifact URL is NOT NULL and non-empty by CHECK, so "completed" and "has
+ * a public artifact" are the same fact rather than two that can drift apart.
+ * §6: "A project with no public artifact does not count" — enforced here for
+ * the same reason `verified_requires_artifact` exists on the evidence ledger,
+ * because a rule that lives only in a form handler is a rule until someone
+ * writes a second form handler.
+ */
+export const buildProjectProgress = pgTable(
+  'build_project_progress',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => appUser.id, { onDelete: 'cascade' }),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => buildProject.id, { onDelete: 'cascade' }),
+    artifactUrl: text('artifact_url').notNull(),
+    completedAt: timestamp('completed_at', { withTimezone: true }).notNull().defaultNow(),
+    note: text('note'),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.projectId] }),
+    // '' satisfies NOT NULL. This is the constraint that actually bites.
+    check('build_project_progress_artifact', sql`${t.artifactUrl} <> ''`),
+  ],
+)
+
+export type ActivePhase = typeof activePhase.$inferSelect
+export type BuildProjectProgress = typeof buildProjectProgress.$inferSelect
+export type Resource = typeof resource.$inferSelect
+export type BuildProject = typeof buildProject.$inferSelect

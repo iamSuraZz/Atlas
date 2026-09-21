@@ -60,5 +60,22 @@
   ["agents/guardrails", "ai-security/output-validation"],
   ["evaluation/regression-gates", "evaluation/golden-sets"],
   ["evaluation/judge-bias", "evaluation/rubric-design"],
-  ["ai-security/output-validation", "ai-security/prompt-injection"]
+  ["ai-security/output-validation", "ai-security/prompt-injection"],
+  ["dsa/two-pointers", "dsa/arrays-hashing"],
+  ["dsa/stack", "dsa/arrays-hashing"],
+  ["dsa/binary-search", "dsa/two-pointers"],
+  ["dsa/sliding-window", "dsa/two-pointers"],
+  ["dsa/linked-list", "dsa/two-pointers"],
+  ["dsa/trees", "dsa/binary-search"],
+  ["dsa/trees", "dsa/linked-list"],
+  ["dsa/tries", "dsa/trees"],
+  ["dsa/heap-priority-queue", "dsa/trees"],
+  ["dsa/backtracking", "dsa/trees"],
+  ["dsa/intervals", "dsa/heap-priority-queue"],
+  ["dsa/greedy", "dsa/heap-priority-queue"],
+  ["dsa/graphs", "dsa/backtracking"],
+  ["dsa/dp-1d", "dsa/backtracking"],
+  ["dsa/dp-2d", "dsa/graphs"],
+  ["dsa/dp-2d", "dsa/dp-1d"],
+  ["dsa/math-bit-manipulation", "dsa/dp-1d"]
 ]

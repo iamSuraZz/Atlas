@@ -57,6 +57,34 @@
       "when": 1789931114553,
       "tag": "0007_curious_sentinels",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790018492891,
+      "tag": "0008_salty_falcon",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790018693079,
+      "tag": "0009_famous_roland_deschain",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790020724747,
+      "tag": "0010_mute_stature",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1790021219745,
+      "tag": "0011_closed_stark_industries",
+      "breakpoints": true
     }
   ]
 }

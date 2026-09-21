@@ -30,6 +30,29 @@ const formatPlanDate = (iso: string) =>
     timeZone: 'UTC',
   })
 
+/*
+ * The track tag. M-DS task d.
+ *
+ * A label, not a counter — two tracks now run in one day and "which
+ * curriculum is this" is the one thing the title does not say. It stays a
+ * quiet monospace word for the same reason §3.1 has no streak: the moment it
+ * becomes a score, it becomes a reason to pick missions to balance it.
+ */
+function TrackTag({ track }: { track: string }) {
+  const dataMl = track === 'DATA_ML'
+  return (
+    <span
+      className={
+        dataMl
+          ? 'text-step-0 text-accent font-mono tracking-widest uppercase'
+          : 'text-step-0 text-text-3 font-mono tracking-widest uppercase'
+      }
+    >
+      {dataMl ? 'Data & ML' : 'Eng'}
+    </span>
+  )
+}
+
 function PrimaryMission({ plan }: { plan: StoredPlan }) {
   const primary = plan.missions.find((m) => m.isPrimary)
   if (!primary) return null
@@ -38,9 +61,12 @@ function PrimaryMission({ plan }: { plan: StoredPlan }) {
     <Card className="bg-raised">
       <CardContent className="flex flex-col gap-4 p-6">
         <div className="flex items-baseline justify-between gap-4">
-          <span className="text-step-0 text-text-3 font-mono tracking-widest uppercase">
-            Primary
-          </span>
+          <div className="flex items-baseline gap-3">
+            <span className="text-step-0 text-text-3 font-mono tracking-widest uppercase">
+              Primary
+            </span>
+            <TrackTag track={primary.track} />
+          </div>
           <span className="text-step-0 text-text-2 font-mono">
             {primary.estMinutes} min
           </span>
@@ -101,6 +127,7 @@ function ThenList({ plan }: { plan: StoredPlan }) {
               {m.status === 'DONE' ? '●' : '○'}
             </span>
             <span className="text-step-1 min-w-0 flex-1 truncate">{m.title}</span>
+            <TrackTag track={m.track} />
             <span className="text-step-0 text-text-3 font-mono">{m.format}</span>
             <span className="text-step-0 text-text-3 w-16 text-right font-mono">
               {m.estMinutes} min

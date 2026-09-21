@@ -30,7 +30,9 @@ const NOW = new Date('2026-06-01T00:00:00Z')
 
 const base: Candidate = {
   skillId: 'postgres/indexing',
+  topic: 'postgres',
   category: 'DATA',
+  phase: 'E2',
   // No gap by default, so a clause test isolates the clause it names.
   // The GAP tests set their own ranks.
   currentRank: 3,
@@ -326,7 +328,11 @@ describe('THE INVARIANT — no clause without a contribution that earned it', ()
   function randomCandidate(r: () => number): Candidate {
     return {
       skillId: `t${Math.floor(r() * 50)}/n${Math.floor(r() * 50)}`,
+      topic: `t${Math.floor(r() * 50)}`,
       category: pick(r, ['DATA', 'SYSTEMS', 'BACKEND', 'PROFESSIONAL']),
+      // Neither field reaches explain(); varied anyway so the generator does
+      // not quietly become the only fixture with constant values.
+      phase: pick(r, ['E1', 'E2', 'E3', 'D0', 'D3']),
       currentRank: Math.floor(r() * 6),
       targetRank: Math.floor(r() * 6),
       halfLifeDays: pick(r, [45, 90, 120, 180]),

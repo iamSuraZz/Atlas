@@ -33,7 +33,9 @@ const NOW = new Date('2026-06-01T00:00:00Z')
  */
 const base: Candidate = {
   skillId: 'postgres/indexing',
+  topic: 'postgres',
   category: 'DATA',
+  phase: 'E2',
   currentRank: 0, // UNASSESSED
   targetRank: 3, // PRACTICAL
   halfLifeDays: 90,
@@ -60,7 +62,15 @@ const ctx: ScoringContext = {
   maxMinutesToNextLevel: 600,
 }
 
-const candidate = (over: Partial<Candidate>): Candidate => ({ ...base, ...over })
+const candidate = (over: Partial<Candidate>): Candidate => ({
+  ...base,
+  // A node's topic is its id up to the slash. Derived here so that overriding
+  // skillId alone cannot leave a fixture claiming to be in another topic.
+  ...(over.skillId !== undefined && over.topic === undefined
+    ? { topic: over.skillId.split('/')[0] ?? over.skillId }
+    : {}),
+  ...over,
+})
 
 describe('§4.1 priority score — individual terms', () => {
   it('gap_size is (target - current) / 5', () => {
@@ -507,16 +517,45 @@ describe('§4.2 plan construction', () => {
       candidate({
         skillId: `topic${i}/node${i}`,
         category: i % 2 === 0 ? 'DATA' : 'SYSTEMS',
+        phase: i % 2 === 0 ? 'E2' : 'E3',
         daysOverdue: count - i,
         blockedDescendants: i % 4,
       }),
     )
 
+  /*
+   * M-DS task b made threads into filters rather than labels on a time slice,
+   * so a fixture of twenty synthetic nodes can no longer fill a DSA or REVIEW
+   * slot. These are the nodes that actually belong to those threads; the
+   * assertions below are unchanged.
+   */
+  const threadMembers: Candidate[] = [
+    candidate({
+      skillId: 'interview/dsa-patterns',
+      category: 'PROFESSIONAL',
+      phase: 'E6',
+    }),
+    candidate({
+      skillId: 'communication/structure',
+      category: 'PROFESSIONAL',
+      phase: 'E5',
+    }),
+    // REVIEW draws only from practised nodes.
+    candidate({
+      skillId: 'postgres/ctes',
+      category: 'DATA',
+      phase: 'E2',
+      currentRank: 3,
+    }),
+    candidate({ skillId: 'redis/pubsub', category: 'DATA', phase: 'E2', currentRank: 2 }),
+  ]
+
   const planInput = (over: Partial<PlanInput> = {}): PlanInput => ({
     now: NOW,
     intensity: 'NORMAL',
     budgetMinutes: 90,
-    candidates: manyCandidates(20),
+    candidates: [...manyCandidates(20), ...threadMembers],
+    activePhases: ['E1', 'E2'],
     threadQuotas: [
       { thread: 'DSA', share: 0.2 },
       { thread: 'SYSTEM_DESIGN', share: 0.15 },
@@ -665,6 +704,8 @@ describe('§4.4 missed days', () => {
       candidate({ skillId: `t${i}/n${i}`, daysOverdue: 30 - i }),
     ),
     threadQuotas: [],
+    // Only THEME, so every candidate must sit in an active engineering phase.
+    activePhases: ['E2'],
     daysMissed,
     weights: DEFAULT_WEIGHTS,
     context: ctx,

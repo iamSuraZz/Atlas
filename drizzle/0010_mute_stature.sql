@@ -1,0 +1,1 @@
+ALTER TABLE "mission" ADD COLUMN "check_spec" jsonb;
